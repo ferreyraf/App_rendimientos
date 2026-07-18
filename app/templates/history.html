@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Historial</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>Fecha</th>
+      <th>Billetera</th>
+      <th>Monto</th>
+      <th>TNA aplicada</th>
+      <th>Rendimiento</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in captures %}
+    <tr>
+      <td>{{ c["fecha"] }}</td>
+      <td>{{ c["wallet_name"] }}</td>
+      <td>${{ "%.2f"|format(c["monto"]) }}</td>
+      <td>{{ "%.2f"|format(c["tna_aplicada"]) }}%</td>
+      <td>${{ "%.2f"|format(c["rendimiento"]) }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">Todavía no hay capturas cargadas.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<p class="total">Rendimiento total acumulado: <strong>${{ "%.2f"|format(total_rendimiento) }}</strong></p>
+{% endblock %}
