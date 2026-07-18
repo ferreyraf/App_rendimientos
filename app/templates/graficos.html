@@ -34,6 +34,23 @@
   </details>
 </section>
 
+<section class="chart-card">
+  <h2>Rulo vs. quieto</h2>
+  <p class="subtitle">Capital final si hubieras dejado el capital inicial quieto en cada billetera (interés simple, sin rotar) vs. el resultado real del rulo</p>
+  <canvas id="comparacionChart" height="120" role="img" aria-label="Comparación del capital final del rulo contra dejar el capital quieto en cada billetera"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Escenario</th><th>Capital final</th></tr></thead>
+      <tbody>
+        {% for item in comparacion %}
+          <tr><td>{{ item.nombre }}</td><td>${{ "%.2f"|format(item.capital_final) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
 <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
 <script>
   const ink = '#6b7280';
@@ -44,6 +61,7 @@
 
   const capitalSeries = {{ capital_series | tojson }};
   const rendimientoPorBilletera = {{ rendimiento_por_billetera | tojson }};
+  const comparacion = {{ comparacion | tojson }};
 
   new Chart(document.getElementById('capitalChart'), {
     type: 'line',
@@ -87,6 +105,29 @@
       scales: {
         x: { ticks: { color: ink }, grid: { display: false } },
         y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'nearest', intersect: true },
+      },
+    },
+  });
+
+  new Chart(document.getElementById('comparacionChart'), {
+    type: 'bar',
+    data: {
+      labels: comparacion.map(item => item.nombre),
+      datasets: [{
+        label: 'Capital final',
+        data: comparacion.map(item => item.capital_final),
+        backgroundColor: comparacion.map(item => item.nombre === 'Rulo (real)' ? seriesBlue : '#cbd5e1'),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink }, grid: { display: false } },
+        y: { ticks: { color: ink }, grid: { color: grid }, beginAtZero: false },
       },
       plugins: {
         legend: { display: false },

@@ -85,6 +85,14 @@ th {
   color: #6b7280;
 }
 
+.row-inactiva {
+  opacity: 0.55;
+}
+
+.row-pendiente {
+  color: #9ca3af;
+}
+
 input[type="number"],
 input[type="time"],
 input[type="date"] {

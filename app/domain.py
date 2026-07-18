@@ -16,6 +16,7 @@ class Wallet:
     active_weekdays: tuple[int, ...]
     default_tna: float  # porcentaje, ej. 18.44
     bundles_weekend_payout: bool = False  # True: banca tradicional, no procesa pagos sábado/domingo
+    activo: bool = True  # False: se excluye por completo de la simulación
 
 
 DEFAULT_WALLETS = [
@@ -89,7 +90,7 @@ def simulate(
     while fecha <= end_date:
         weekday = fecha.weekday()
         for wallet in wallets:
-            if weekday not in wallet.active_weekdays:
+            if not wallet.activo or weekday not in wallet.active_weekdays:
                 continue
             captura_ts = datetime.combine(fecha, _parse_hhmm(wallet.capture_time))
 
@@ -149,3 +150,29 @@ def simulate(
         dia.capital_cierre = capital
 
     return [summaries[d] for d in sorted(summaries) if start_date <= d <= end_date]
+
+
+def proxima_captura(desde: datetime, wallets: list[Wallet]) -> tuple[datetime, Wallet] | None:
+    """Encuentra la próxima captura (acción manual: mover el dinero) desde `desde`.
+
+    Busca hasta 8 días adelante, suficiente para garantizar encontrar una
+    billetera activa sin importar la combinación de días activos.
+    """
+    activos = [w for w in wallets if w.activo]
+    if not activos:
+        return None
+
+    candidatos: list[tuple[datetime, Wallet]] = []
+    for dias in range(8):
+        fecha = desde.date() + timedelta(days=dias)
+        weekday = fecha.weekday()
+        for wallet in activos:
+            if weekday not in wallet.active_weekdays:
+                continue
+            ts = datetime.combine(fecha, _parse_hhmm(wallet.capture_time))
+            if ts >= desde:
+                candidatos.append((ts, wallet))
+
+    if not candidatos:
+        return None
+    return min(candidatos, key=lambda item: item[0])

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Historial</h1>
+<p class="subtitle"><a href="{{ url_for('main.exportar_historial') }}">Exportar a CSV</a></p>
 
 {% for s in summaries %}
 <section class="day-card">

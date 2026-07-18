@@ -1,9 +1,11 @@
-from datetime import date, timedelta
+import csv
+import io
+from datetime import date, datetime, timedelta
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 
 from . import db
-from .domain import Wallet, simulate
+from .domain import Wallet, proxima_captura, simulate
 
 bp = Blueprint("main", __name__)
 
@@ -17,6 +19,7 @@ def _wallet_from_row(row):
         active_weekdays=tuple(int(x) for x in row["active_weekdays"].split(",")),
         default_tna=row["tna"],
         bundles_weekend_payout=bool(row["bundles_weekend_payout"]),
+        activo=bool(row["activo"]),
     )
 
 
@@ -32,11 +35,28 @@ def dashboard():
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     conn.close()
 
-    hoy = date.today()
+    ahora = datetime.now()
+    hoy = ahora.date()
     summaries = simulate(start_date, hoy, principal, wallets)
     summary = summaries[-1] if summaries else None
 
-    return render_template("dashboard.html", summary=summary, hoy=hoy)
+    proxima_info = None
+    proxima = proxima_captura(ahora, wallets)
+    if proxima is not None:
+        ts, wallet = proxima
+        falta = ts - ahora
+        horas, resto = divmod(int(falta.total_seconds()), 3600)
+        minutos = resto // 60
+        proxima_info = {
+            "wallet_name": wallet.name,
+            "timestamp": ts,
+            "horas": horas,
+            "minutos": minutos,
+        }
+
+    return render_template(
+        "dashboard.html", summary=summary, hoy=hoy, ahora=ahora, proxima=proxima_info
+    )
 
 
 @bp.route("/configuracion", methods=["GET", "POST"])
@@ -89,6 +109,46 @@ def historial():
     return render_template("history.html", summaries=summaries)
 
 
+@bp.route("/historial/exportar.csv")
+def exportar_historial():
+    conn = db.get_db()
+    config = db.get_config(conn)
+    if config is None:
+        conn.close()
+        return redirect(url_for("main.configuracion"))
+
+    principal, start_date = config
+    wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    conn.close()
+
+    summaries = simulate(start_date, date.today(), principal, wallets)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        ["fecha", "hora", "billetera", "monto_capturado", "tna", "rendimiento", "dias_acumulados"]
+    )
+    for s in summaries:
+        for c in s.captures:
+            writer.writerow(
+                [
+                    c.timestamp.date().isoformat(),
+                    c.timestamp.strftime("%H:%M"),
+                    c.wallet_name,
+                    f"{c.monto_capturado:.2f}",
+                    f"{c.tna:.2f}",
+                    f"{c.rendimiento:.2f}",
+                    c.dias_acumulados,
+                ]
+            )
+
+    return Response(
+        buffer.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=rulo_historial.csv"},
+    )
+
+
 @bp.route("/billeteras")
 def billeteras():
     conn = db.get_db()
@@ -103,7 +163,8 @@ def actualizar_billetera(wallet_id):
     tna = float(request.form["tna"])
     capture_time = request.form["capture_time"]
     payout_time = request.form["payout_time"]
-    db.update_wallet(conn, wallet_id, tna, capture_time, payout_time)
+    activo = request.form.get("activo") == "on"
+    db.update_wallet(conn, wallet_id, tna, capture_time, payout_time, activo)
     conn.close()
     return redirect(url_for("main.billeteras"))
 
@@ -137,10 +198,25 @@ def graficos():
         {"nombre": w.name, "rendimiento": rendimiento_por_id[w.id]} for w in wallets
     ]
 
+    # Comparación "quieto" (sin rotar, interés simple, sin capitalizar) contra
+    # el resultado real y compuesto del rulo, para dimensionar la ventaja de rotar.
+    dias_totales = (date.today() - start_date).days + 1
+    capital_final_rulo = summaries[-1].capital_cierre if summaries else principal
+    comparacion = [
+        {
+            "nombre": w.name,
+            "capital_final": principal + principal * (w.default_tna / 100) * dias_totales / 365,
+        }
+        for w in wallets
+        if w.activo
+    ]
+    comparacion.append({"nombre": "Rulo (real)", "capital_final": capital_final_rulo})
+
     return render_template(
         "graficos.html",
         capital_series=capital_series,
         rendimiento_por_billetera=rendimiento_por_billetera,
+        comparacion=comparacion,
     )
 
 
