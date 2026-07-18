@@ -117,6 +117,14 @@ def add_aporte(conn, fecha, monto):
     conn.commit()
 
 
+def update_aporte(conn, aporte_id, fecha, monto):
+    conn.execute(
+        "UPDATE aportes SET fecha = ?, monto = ? WHERE id = ?",
+        (fecha.isoformat(), monto, aporte_id),
+    )
+    conn.commit()
+
+
 def delete_aporte(conn, aporte_id):
     conn.execute("DELETE FROM aportes WHERE id = ?", (aporte_id,))
     conn.commit()
@@ -130,6 +138,14 @@ def get_impuestos(conn):
 def add_impuesto(conn, fecha, monto):
     conn.execute(
         "INSERT INTO impuestos (fecha, monto) VALUES (?, ?)", (fecha.isoformat(), monto)
+    )
+    conn.commit()
+
+
+def update_impuesto(conn, impuesto_id, fecha, monto):
+    conn.execute(
+        "UPDATE impuestos SET fecha = ?, monto = ? WHERE id = ?",
+        (fecha.isoformat(), monto, impuesto_id),
     )
     conn.commit()
 

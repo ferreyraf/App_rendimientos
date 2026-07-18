@@ -177,6 +177,32 @@ def actualizar_egresos_fijos():
     return redirect(url_for("main.configuracion"))
 
 
+@bp.route("/configuracion/editar/<int:aporte_id>", methods=["POST"])
+def editar_aporte(aporte_id):
+    conn = db.get_db()
+    try:
+        monto = float(request.form["monto"])
+        fecha = date.fromisoformat(request.form["fecha"])
+    except (KeyError, ValueError):
+        conn.close()
+        flash("Datos inválidos: revisá el monto y la fecha.")
+        return redirect(url_for("main.configuracion"))
+
+    if monto <= 0:
+        conn.close()
+        flash("El aporte debe ser mayor a cero.")
+        return redirect(url_for("main.configuracion"))
+    if fecha > date.today():
+        conn.close()
+        flash("La fecha del aporte no puede ser futura.")
+        return redirect(url_for("main.configuracion"))
+
+    db.update_aporte(conn, aporte_id, fecha, monto)
+    conn.close()
+    flash("Aporte actualizado.")
+    return redirect(url_for("main.configuracion"))
+
+
 @bp.route("/configuracion/eliminar/<int:aporte_id>", methods=["POST"])
 def eliminar_aporte(aporte_id):
     conn = db.get_db()
@@ -205,6 +231,28 @@ def agregar_impuesto():
     db.add_impuesto(conn, fecha, monto)
     conn.close()
     flash("Impuesto agregado.")
+    return redirect(url_for("main.configuracion"))
+
+
+@bp.route("/configuracion/impuesto/editar/<int:impuesto_id>", methods=["POST"])
+def editar_impuesto(impuesto_id):
+    conn = db.get_db()
+    try:
+        monto = float(request.form["monto"])
+        fecha = date.fromisoformat(request.form["fecha"])
+    except (KeyError, ValueError):
+        conn.close()
+        flash("Datos inválidos: revisá el monto y la fecha del impuesto.")
+        return redirect(url_for("main.configuracion"))
+
+    if monto <= 0:
+        conn.close()
+        flash("El impuesto debe ser mayor a cero.")
+        return redirect(url_for("main.configuracion"))
+
+    db.update_impuesto(conn, impuesto_id, fecha, monto)
+    conn.close()
+    flash("Impuesto actualizado.")
     return redirect(url_for("main.configuracion"))
 
 
