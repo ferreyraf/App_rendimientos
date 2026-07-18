@@ -129,8 +129,9 @@ def configuracion():
         return redirect(url_for("main.configuracion"))
 
     aportes = db.get_aportes(conn)
+    wallets = db.get_wallets(conn)
     conn.close()
-    return render_template("configuracion.html", aportes=aportes)
+    return render_template("configuracion.html", aportes=aportes, wallets=wallets)
 
 
 @bp.route("/configuracion/eliminar/<int:aporte_id>", methods=["POST"])
@@ -203,10 +204,7 @@ def exportar_historial():
 
 @bp.route("/billeteras")
 def billeteras():
-    conn = db.get_db()
-    wallets = db.get_wallets(conn)
-    conn.close()
-    return render_template("wallets.html", wallets=wallets)
+    return redirect(url_for("main.configuracion"))
 
 
 @bp.route("/billeteras/<wallet_id>", methods=["POST"])
@@ -223,7 +221,7 @@ def actualizar_billetera(wallet_id):
         conn, wallet_id, tna, capture_time, payout_time, activo, monto_minimo, monto_maximo
     )
     conn.close()
-    return redirect(url_for("main.billeteras"))
+    return redirect(url_for("main.configuracion"))
 
 
 @bp.route("/graficos")
@@ -310,6 +308,8 @@ def proyeccion():
     hoy = date.today()
     default_objetivo = hoy + timedelta(days=30)
 
+    aportes_planeados: list[tuple[date, float]] = []
+
     if request.method == "POST":
         try:
             fecha_objetivo = date.fromisoformat(request.form["fecha_objetivo"])
@@ -319,11 +319,30 @@ def proyeccion():
         if fecha_objetivo <= hoy:
             flash("La fecha objetivo debe ser posterior a hoy.")
             return redirect(url_for("main.proyeccion"))
+
+        fechas_planeadas = request.form.getlist("aporte_futuro_fecha")
+        montos_planeados = request.form.getlist("aporte_futuro_monto")
+        for fecha_raw, monto_raw in zip(fechas_planeadas, montos_planeados):
+            if not fecha_raw or not monto_raw:
+                continue
+            try:
+                fecha_planeada = date.fromisoformat(fecha_raw)
+                monto_planeado = float(monto_raw)
+            except ValueError:
+                flash("Uno de los aportes planeados tiene datos inválidos.")
+                return redirect(url_for("main.proyeccion"))
+            if monto_planeado <= 0:
+                flash("Los aportes planeados deben ser mayores a cero.")
+                return redirect(url_for("main.proyeccion"))
+            if not (hoy < fecha_planeada <= fecha_objetivo):
+                flash("Los aportes planeados deben caer entre hoy y la fecha objetivo.")
+                return redirect(url_for("main.proyeccion"))
+            aportes_planeados.append((fecha_planeada, monto_planeado))
     else:
         fecha_objetivo = default_objetivo
 
     principal_total = sum(monto for _, monto in aportes)
-    summaries = simulate(aportes, fecha_objetivo, wallets)
+    summaries = simulate(aportes + aportes_planeados, fecha_objetivo, wallets)
     capital_hoy = next((s.capital_cierre for s in summaries if s.date == hoy), principal_total)
     capital_final = summaries[-1].capital_cierre if summaries else principal_total
 
@@ -340,4 +359,5 @@ def proyeccion():
         capital_final=capital_final,
         rendimiento_proyectado=capital_final - capital_hoy,
         capital_series=capital_series,
+        aportes_planeados=aportes_planeados,
     )

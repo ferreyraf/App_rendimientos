@@ -18,25 +18,29 @@
   </div>
 </div>
 
-{% if actual %}
-<section class="chart-card">
-  <p class="subtitle">Liquidez</p>
-  <p class="total">
-    Tu dinero está ahora en <strong>{{ actual.wallet_name }}</strong>
-    (desde las {{ actual.timestamp.strftime("%H:%M") }}{% if actual.timestamp.date() != hoy %} del {{ actual.timestamp.strftime("%d/%m") }}{% endif %})
-  </p>
-</section>
-{% endif %}
+{% if actual or proxima %}
+<div class="two-col">
+  {% if actual %}
+  <section class="chart-card">
+    <p class="subtitle">Liquidez</p>
+    <p class="total">
+      Tu dinero está ahora en <strong>{{ actual.wallet_name }}</strong>
+      (desde las {{ actual.timestamp.strftime("%H:%M") }}{% if actual.timestamp.date() != hoy %} del {{ actual.timestamp.strftime("%d/%m") }}{% endif %})
+    </p>
+  </section>
+  {% endif %}
 
-{% if proxima %}
-<section class="chart-card">
-  <p class="subtitle">Próxima acción</p>
-  <p class="total">
-    Mover a <strong>{{ proxima.wallet_name }}</strong> a las {{ proxima.timestamp.strftime("%H:%M") }}
-    {% if proxima.timestamp.date() != hoy %}({{ proxima.timestamp.strftime("%d/%m") }}){% endif %}
-    — en <strong>{{ proxima.horas }}h {{ proxima.minutos }}min</strong>
-  </p>
-</section>
+  {% if proxima %}
+  <section class="chart-card">
+    <p class="subtitle">Próxima acción</p>
+    <p class="total">
+      Mover a <strong>{{ proxima.wallet_name }}</strong> a las {{ proxima.timestamp.strftime("%H:%M") }}
+      {% if proxima.timestamp.date() != hoy %}({{ proxima.timestamp.strftime("%d/%m") }}){% endif %}
+      — en <strong>{{ proxima.horas }}h {{ proxima.minutos }}min</strong>
+    </p>
+  </section>
+  {% endif %}
+</div>
 {% endif %}
 
 {% if summary %}

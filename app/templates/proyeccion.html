@@ -6,12 +6,48 @@
 <form method="post" class="config-form">
   <label for="fecha_objetivo">Fecha objetivo</label>
   <input type="date" id="fecha_objetivo" name="fecha_objetivo" value="{{ fecha_objetivo.isoformat() }}" required>
+
+  <p class="subtitle" style="margin-top: 1rem;">
+    Aportes futuros planeados (opcional) — solo se usan para este cálculo, no se guardan
+  </p>
+  <div id="aportesFuturosContainer">
+    {% for fecha, monto in aportes_planeados %}
+    <div class="inline-form aporte-futuro-row">
+      <input type="date" name="aporte_futuro_fecha" value="{{ fecha.isoformat() }}">
+      <input type="number" step="0.01" min="0.01" name="aporte_futuro_monto" value="{{ monto }}" placeholder="Monto">
+      <button type="button" onclick="this.parentElement.remove()">Quitar</button>
+    </div>
+    {% endfor %}
+  </div>
+  <button type="button" id="agregarAporteFuturo">+ Agregar aporte planeado</button>
+
   <button type="submit">Proyectar</button>
 </form>
+
+<template id="aporteFuturoTemplate">
+  <div class="inline-form aporte-futuro-row">
+    <input type="date" name="aporte_futuro_fecha">
+    <input type="number" step="0.01" min="0.01" name="aporte_futuro_monto" placeholder="Monto">
+    <button type="button" onclick="this.parentElement.remove()">Quitar</button>
+  </div>
+</template>
+
+<script>
+  document.getElementById('agregarAporteFuturo').addEventListener('click', () => {
+    const tpl = document.getElementById('aporteFuturoTemplate');
+    document.getElementById('aportesFuturosContainer').appendChild(tpl.content.cloneNode(true));
+  });
+</script>
 
 <p class="total">Capital hoy ({{ hoy.strftime("%d/%m/%Y") }}): <strong>${{ "%.2f"|format(capital_hoy) }}</strong></p>
 <p class="total">Capital proyectado al {{ fecha_objetivo.strftime("%d/%m/%Y") }}: <strong>${{ "%.2f"|format(capital_final) }}</strong></p>
 <p class="total">Rendimiento proyectado en el período: <strong>${{ "%.2f"|format(rendimiento_proyectado) }}</strong></p>
+{% if aportes_planeados %}
+<p class="subtitle">
+  Incluye {{ aportes_planeados|length }} aporte(s) planeado(s):
+  {% for fecha, monto in aportes_planeados %}${{ "%.2f"|format(monto) }} el {{ fecha.strftime("%d/%m/%Y") }}{{ ", " if not loop.last }}{% endfor %}
+</p>
+{% endif %}
 
 <section class="chart-card">
   <h2>Evolución del capital (real + proyectado)</h2>
