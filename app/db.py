@@ -15,13 +15,18 @@ CREATE TABLE IF NOT EXISTS wallets (
     active_weekdays TEXT NOT NULL,
     tna REAL NOT NULL,
     bundles_weekend_payout INTEGER NOT NULL DEFAULT 0,
-    activo INTEGER NOT NULL DEFAULT 1
+    activo INTEGER NOT NULL DEFAULT 1,
+    monto_minimo REAL NOT NULL DEFAULT 0,
+    monto_maximo REAL,
+    reparto_socio_id TEXT,
+    reparto_umbral REAL,
+    reparto_hora TEXT
 );
 
-CREATE TABLE IF NOT EXISTS rulo_config (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    principal REAL NOT NULL,
-    start_date TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS aportes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL,
+    monto REAL NOT NULL
 );
 """
 
@@ -48,8 +53,9 @@ def _seed_wallets(conn):
     for w in DEFAULT_WALLETS:
         conn.execute(
             "INSERT INTO wallets "
-            "(id, name, capture_time, payout_time, active_weekdays, tna, bundles_weekend_payout, activo) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(id, name, capture_time, payout_time, active_weekdays, tna, bundles_weekend_payout, "
+            "activo, monto_minimo, monto_maximo, reparto_socio_id, reparto_umbral, reparto_hora) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 w.id,
                 w.name,
@@ -59,6 +65,11 @@ def _seed_wallets(conn):
                 w.default_tna,
                 int(w.bundles_weekend_payout),
                 int(w.activo),
+                w.monto_minimo,
+                w.monto_maximo,
+                w.reparto_socio_id,
+                w.reparto_umbral,
+                w.reparto_hora,
             ),
         )
 
@@ -71,26 +82,29 @@ def get_wallet(conn, wallet_id):
     return conn.execute("SELECT * FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
 
 
-def update_wallet(conn, wallet_id, tna, capture_time, payout_time, activo):
+def update_wallet(
+    conn, wallet_id, tna, capture_time, payout_time, activo, monto_minimo, monto_maximo
+):
     conn.execute(
-        "UPDATE wallets SET tna = ?, capture_time = ?, payout_time = ?, activo = ? WHERE id = ?",
-        (tna, capture_time, payout_time, int(activo), wallet_id),
+        "UPDATE wallets SET tna = ?, capture_time = ?, payout_time = ?, activo = ?, "
+        "monto_minimo = ?, monto_maximo = ? WHERE id = ?",
+        (tna, capture_time, payout_time, int(activo), monto_minimo, monto_maximo, wallet_id),
     )
     conn.commit()
 
 
-def get_config(conn):
-    row = conn.execute("SELECT principal, start_date FROM rulo_config WHERE id = 1").fetchone()
-    if row is None:
-        return None
-    return row["principal"], date.fromisoformat(row["start_date"])
+def get_aportes(conn):
+    rows = conn.execute("SELECT id, fecha, monto FROM aportes ORDER BY fecha, id").fetchall()
+    return [(row["id"], date.fromisoformat(row["fecha"]), row["monto"]) for row in rows]
 
 
-def set_config(conn, principal, start_date):
+def add_aporte(conn, fecha, monto):
     conn.execute(
-        "INSERT INTO rulo_config (id, principal, start_date) VALUES (1, ?, ?) "
-        "ON CONFLICT(id) DO UPDATE SET principal = excluded.principal, "
-        "start_date = excluded.start_date",
-        (principal, start_date.isoformat()),
+        "INSERT INTO aportes (fecha, monto) VALUES (?, ?)", (fecha.isoformat(), monto)
     )
+    conn.commit()
+
+
+def delete_aporte(conn, aporte_id):
+    conn.execute("DELETE FROM aportes WHERE id = ?", (aporte_id,))
     conn.commit()

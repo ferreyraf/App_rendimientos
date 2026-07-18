@@ -5,7 +5,14 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 
 from . import db
-from .domain import Wallet, proxima_captura, simulate
+from .domain import (
+    Wallet,
+    billetera_actual,
+    capital_simple,
+    proxima_captura,
+    simulate,
+    tasa_efectiva_anual,
+)
 
 bp = Blueprint("main", __name__)
 
@@ -20,24 +27,32 @@ def _wallet_from_row(row):
         default_tna=row["tna"],
         bundles_weekend_payout=bool(row["bundles_weekend_payout"]),
         activo=bool(row["activo"]),
+        monto_minimo=row["monto_minimo"],
+        monto_maximo=row["monto_maximo"],
+        reparto_socio_id=row["reparto_socio_id"],
+        reparto_umbral=row["reparto_umbral"],
+        reparto_hora=row["reparto_hora"],
     )
+
+
+def _aportes_pares(conn):
+    return [(fecha, monto) for _, fecha, monto in db.get_aportes(conn)]
 
 
 @bp.route("/")
 def dashboard():
     conn = db.get_db()
-    config = db.get_config(conn)
-    if config is None:
+    aportes = _aportes_pares(conn)
+    if not aportes:
         conn.close()
         return redirect(url_for("main.configuracion"))
 
-    principal, start_date = config
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     conn.close()
 
     ahora = datetime.now()
     hoy = ahora.date()
-    summaries = simulate(start_date, hoy, principal, wallets)
+    summaries = simulate(aportes, hoy, wallets)
     summary = summaries[-1] if summaries else None
 
     proxima_info = None
@@ -54,8 +69,35 @@ def dashboard():
             "minutos": minutos,
         }
 
+    actual_info = None
+    actual = billetera_actual(ahora, wallets)
+    if actual is not None:
+        ts, wallet = actual
+        actual_info = {"wallet_name": wallet.name, "timestamp": ts}
+
+    principal_total = sum(monto for _, monto in aportes)
+    capital_hoy = summary.capital_cierre if summary else principal_total
+    dias_totales = (hoy - min(fecha for fecha, _ in aportes)).days + 1
+
+    ganancia_neta = capital_hoy - principal_total
+    tea_lograda = tasa_efectiva_anual(principal_total, capital_hoy, dias_totales)
+
+    mejor_quieto = max(
+        (capital_simple(aportes, w.default_tna, hoy) for w in wallets if w.activo),
+        default=principal_total,
+    )
+    ventaja_rulo = capital_hoy - mejor_quieto
+
     return render_template(
-        "dashboard.html", summary=summary, hoy=hoy, ahora=ahora, proxima=proxima_info
+        "dashboard.html",
+        summary=summary,
+        hoy=hoy,
+        ahora=ahora,
+        proxima=proxima_info,
+        actual=actual_info,
+        ganancia_neta=ganancia_neta,
+        tea_lograda=tea_lograda,
+        ventaja_rulo=ventaja_rulo,
     )
 
 
@@ -65,63 +107,73 @@ def configuracion():
 
     if request.method == "POST":
         try:
-            principal = float(request.form["principal"])
-            start_date = date.fromisoformat(request.form["start_date"])
+            monto = float(request.form["monto"])
+            fecha = date.fromisoformat(request.form["fecha"])
         except (KeyError, ValueError):
             conn.close()
-            flash("Datos inválidos: revisá el capital inicial y la fecha.")
+            flash("Datos inválidos: revisá el monto y la fecha.")
             return redirect(url_for("main.configuracion"))
 
-        if principal <= 0:
+        if monto <= 0:
             conn.close()
-            flash("El capital inicial debe ser mayor a cero.")
+            flash("El aporte debe ser mayor a cero.")
             return redirect(url_for("main.configuracion"))
-        if start_date > date.today():
+        if fecha > date.today():
             conn.close()
-            flash("La fecha de inicio no puede ser futura.")
+            flash("La fecha del aporte no puede ser futura.")
             return redirect(url_for("main.configuracion"))
 
-        db.set_config(conn, principal, start_date)
+        db.add_aporte(conn, fecha, monto)
         conn.close()
-        flash("Configuración guardada.")
-        return redirect(url_for("main.dashboard"))
+        flash("Aporte agregado.")
+        return redirect(url_for("main.configuracion"))
 
-    config = db.get_config(conn)
+    aportes = db.get_aportes(conn)
     conn.close()
-    return render_template("configuracion.html", config=config)
+    return render_template("configuracion.html", aportes=aportes)
+
+
+@bp.route("/configuracion/eliminar/<int:aporte_id>", methods=["POST"])
+def eliminar_aporte(aporte_id):
+    conn = db.get_db()
+    db.delete_aporte(conn, aporte_id)
+    conn.close()
+    flash("Aporte eliminado.")
+    return redirect(url_for("main.configuracion"))
 
 
 @bp.route("/historial")
 def historial():
     conn = db.get_db()
-    config = db.get_config(conn)
-    if config is None:
+    aportes = _aportes_pares(conn)
+    if not aportes:
         conn.close()
         return redirect(url_for("main.configuracion"))
 
-    principal, start_date = config
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     conn.close()
 
-    summaries = simulate(start_date, date.today(), principal, wallets)
+    summaries = simulate(aportes, date.today(), wallets)
+    capital_series = [
+        {"date": s.date.isoformat(), "capital_cierre": s.capital_cierre} for s in summaries
+    ]
     summaries.reverse()  # más reciente primero
 
-    return render_template("history.html", summaries=summaries)
+    return render_template("history.html", summaries=summaries, capital_series=capital_series)
 
 
 @bp.route("/historial/exportar.csv")
 def exportar_historial():
     conn = db.get_db()
-    config = db.get_config(conn)
-    if config is None:
+    aportes = _aportes_pares(conn)
+    if not aportes:
         conn.close()
         return redirect(url_for("main.configuracion"))
 
-    principal, start_date = config
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     conn.close()
 
-    summaries = simulate(start_date, date.today(), principal, wallets)
+    summaries = simulate(aportes, date.today(), wallets)
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -164,7 +216,12 @@ def actualizar_billetera(wallet_id):
     capture_time = request.form["capture_time"]
     payout_time = request.form["payout_time"]
     activo = request.form.get("activo") == "on"
-    db.update_wallet(conn, wallet_id, tna, capture_time, payout_time, activo)
+    monto_minimo = float(request.form.get("monto_minimo") or 0)
+    monto_maximo_raw = request.form.get("monto_maximo")
+    monto_maximo = float(monto_maximo_raw) if monto_maximo_raw else None
+    db.update_wallet(
+        conn, wallet_id, tna, capture_time, payout_time, activo, monto_minimo, monto_maximo
+    )
     conn.close()
     return redirect(url_for("main.billeteras"))
 
@@ -172,20 +229,34 @@ def actualizar_billetera(wallet_id):
 @bp.route("/graficos")
 def graficos():
     conn = db.get_db()
-    config = db.get_config(conn)
-    if config is None:
+    aportes = _aportes_pares(conn)
+    if not aportes:
         conn.close()
         return redirect(url_for("main.configuracion"))
 
-    principal, start_date = config
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     conn.close()
 
-    summaries = simulate(start_date, date.today(), principal, wallets)
+    summaries = simulate(aportes, date.today(), wallets)
 
-    capital_series = [
-        {"date": s.date.isoformat(), "capital_cierre": s.capital_cierre} for s in summaries
-    ]
+    # Serie de capital + desglose aportado vs. ganancia generada, para el
+    # área apilada "aportes vs. ganancia".
+    aportes_ordenados = sorted(aportes, key=lambda a: a[0])
+    capital_series = []
+    aporte_acumulado = 0.0
+    idx = 0
+    for s in summaries:
+        while idx < len(aportes_ordenados) and aportes_ordenados[idx][0] <= s.date:
+            aporte_acumulado += aportes_ordenados[idx][1]
+            idx += 1
+        capital_series.append(
+            {
+                "date": s.date.isoformat(),
+                "capital_cierre": s.capital_cierre,
+                "aportado": aporte_acumulado,
+                "ganancia": s.capital_cierre - aporte_acumulado,
+            }
+        )
 
     rendimiento_por_id = {w.id: 0.0 for w in wallets}
     for s in summaries:
@@ -200,35 +271,39 @@ def graficos():
 
     # Comparación "quieto" (sin rotar, interés simple, sin capitalizar) contra
     # el resultado real y compuesto del rulo, para dimensionar la ventaja de rotar.
-    dias_totales = (date.today() - start_date).days + 1
-    capital_final_rulo = summaries[-1].capital_cierre if summaries else principal
+    hoy = date.today()
+    principal_total = sum(monto for _, monto in aportes)
+    dias_totales = (hoy - min(fecha for fecha, _ in aportes)).days + 1
+    capital_final_rulo = summaries[-1].capital_cierre if summaries else principal_total
     comparacion = [
-        {
-            "nombre": w.name,
-            "capital_final": principal + principal * (w.default_tna / 100) * dias_totales / 365,
-        }
+        {"nombre": w.name, "capital_final": capital_simple(aportes, w.default_tna, hoy)}
         for w in wallets
         if w.activo
     ]
     comparacion.append({"nombre": "Rulo (real)", "capital_final": capital_final_rulo})
+
+    activas = [w for w in wallets if w.activo]
+    tea_rulo = tasa_efectiva_anual(principal_total, capital_final_rulo, dias_totales)
+    tna_promedio = sum(w.default_tna for w in activas) / len(activas) if activas else 0.0
 
     return render_template(
         "graficos.html",
         capital_series=capital_series,
         rendimiento_por_billetera=rendimiento_por_billetera,
         comparacion=comparacion,
+        tea_rulo=tea_rulo,
+        tna_promedio=tna_promedio,
     )
 
 
 @bp.route("/proyeccion", methods=["GET", "POST"])
 def proyeccion():
     conn = db.get_db()
-    config = db.get_config(conn)
-    if config is None:
+    aportes = _aportes_pares(conn)
+    if not aportes:
         conn.close()
         return redirect(url_for("main.configuracion"))
 
-    principal, start_date = config
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     conn.close()
 
@@ -247,9 +322,10 @@ def proyeccion():
     else:
         fecha_objetivo = default_objetivo
 
-    summaries = simulate(start_date, fecha_objetivo, principal, wallets)
-    capital_hoy = next((s.capital_cierre for s in summaries if s.date == hoy), principal)
-    capital_final = summaries[-1].capital_cierre if summaries else principal
+    principal_total = sum(monto for _, monto in aportes)
+    summaries = simulate(aportes, fecha_objetivo, wallets)
+    capital_hoy = next((s.capital_cierre for s in summaries if s.date == hoy), principal_total)
+    capital_final = summaries[-1].capital_cierre if summaries else principal_total
 
     capital_series = [
         {"date": s.date.isoformat(), "capital_cierre": s.capital_cierre, "futuro": s.date > hoy}

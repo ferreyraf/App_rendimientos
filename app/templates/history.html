@@ -3,9 +3,25 @@
 <h1>Historial</h1>
 <p class="subtitle"><a href="{{ url_for('main.exportar_historial') }}">Exportar a CSV</a></p>
 
+{% if capital_series|length > 1 %}
+<section class="chart-card">
+  <h2>Evolución del capital</h2>
+  <canvas id="historialChart" height="100" role="img" aria-label="Evolución del capital de cierre día a día"></canvas>
+</section>
+{% endif %}
+
 {% for s in summaries %}
-<section class="day-card">
-  <h2>{{ s.date.strftime("%d/%m/%Y") }}</h2>
+<details class="day-card" {{ "open" if loop.first }}>
+  <summary class="day-summary">
+    <span class="day-summary-date">
+      {{ s.date.strftime("%d/%m/%Y") }}
+      {% if s.aporte_recibido > 0 %}<span class="badge">+${{ "%.2f"|format(s.aporte_recibido) }} aporte</span>{% endif %}
+    </span>
+    <span class="day-summary-figures">
+      Rendimiento ${{ "%.2f"|format(s.rendimiento_generado) }} · Capital <strong>${{ "%.2f"|format(s.capital_cierre) }}</strong>
+    </span>
+  </summary>
+
   <table>
     <thead>
       <tr>
@@ -24,6 +40,7 @@
         <td>
           ${{ "%.2f"|format(c.rendimiento) }}
           {% if c.dias_acumulados > 1 %}<span class="badge">×{{ c.dias_acumulados }} días</span>{% endif %}
+          {% if c.limitado %}<span class="badge badge-warning">limitado</span>{% endif %}
         </td>
       </tr>
     {% else %}
@@ -36,8 +53,45 @@
     Acreditado: ${{ "%.2f"|format(s.rendimiento_acreditado) }} ·
     Capital de cierre: <strong>${{ "%.2f"|format(s.capital_cierre) }}</strong>
   </p>
-</section>
+</details>
 {% else %}
 <p class="subtitle">Todavía no hay historial.</p>
 {% endfor %}
+
+{% if capital_series|length > 1 %}
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+
+  const capitalSeries = {{ capital_series | tojson }};
+
+  new Chart(document.getElementById('historialChart'), {
+    type: 'line',
+    data: {
+      labels: capitalSeries.map(p => p.date),
+      datasets: [{
+        label: 'Capital de cierre',
+        data: capitalSeries.map(p => p.capital_cierre),
+        borderColor: token('--series-1'),
+        backgroundColor: token('--series-1'),
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.15,
+      }],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: token('--text-secondary'), maxTicksLimit: 10 }, grid: { color: token('--gridline') } },
+        y: { ticks: { color: token('--text-secondary') }, grid: { color: token('--gridline') } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      interaction: { mode: 'index', intersect: false },
+    },
+  });
+</script>
+{% endif %}
 {% endblock %}

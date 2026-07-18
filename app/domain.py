@@ -17,14 +17,27 @@ class Wallet:
     default_tna: float  # porcentaje, ej. 18.44
     bundles_weekend_payout: bool = False  # True: banca tradicional, no procesa pagos sábado/domingo
     activo: bool = True  # False: se excluye por completo de la simulación
+    monto_minimo: float = 0.0  # por debajo de esto, no genera rendimiento
+    monto_maximo: float | None = None  # por encima de esto, el excedente no genera rendimiento (None = sin techo)
+    reparto_socio_id: str | None = None  # id de la billetera que recibe el excedente del split
+    reparto_umbral: float | None = None  # monto que esta billetera se queda para sí en el split
+    reparto_hora: str | None = None  # "HH:MM": hora del split (sábado) y del merge (lunes)
 
 
 DEFAULT_WALLETS = [
-    Wallet("uala", "UALA", "09:00", "19:00", WEEKDAYS, 18.44, bundles_weekend_payout=True),
+    Wallet(
+        "uala", "UALA", "09:00", "19:00", WEEKDAYS, 18.44,
+        bundles_weekend_payout=True, monto_minimo=10_000,
+    ),
     Wallet("montemar", "Montemar Pay", "16:00", "15:00", WEEKDAYS, 19.0, bundles_weekend_payout=True),
     Wallet("mercadopago", "MercadoPago", "17:20", "02:00", WEEKDAYS, 17.0, bundles_weekend_payout=True),
     Wallet("galicia", "Galicia", "22:00", "19:00", WEEKDAYS, 15.7, bundles_weekend_payout=True),
-    Wallet("nx", "Nx", "22:00", "08:00", WEEKEND, 18.0, bundles_weekend_payout=False),
+    Wallet(
+        "nx", "Nx", "22:00", "08:00", WEEKEND, 18.0, bundles_weekend_payout=False,
+        monto_maximo=1_000_000,
+        reparto_socio_id="personal_pay", reparto_umbral=1_000_000, reparto_hora="09:00",
+    ),
+    Wallet("personal_pay", "Personal Pay", "22:00", "08:00", WEEKEND, 17.8, bundles_weekend_payout=False),
 ]
 
 
@@ -46,6 +59,7 @@ class CaptureEvent:
     tna: float
     rendimiento: float
     dias_acumulados: int = 1  # >1 cuando el pago se acumula por fin de semana (ej. viernes: 3)
+    limitado: bool = False  # True si el piso/techo de la billetera alteró el cálculo
 
 
 @dataclass
@@ -54,6 +68,7 @@ class DaySummary:
     captures: list[CaptureEvent] = field(default_factory=list)
     rendimiento_generado: float = 0.0
     rendimiento_acreditado: float = 0.0
+    aporte_recibido: float = 0.0
     capital_apertura: float = 0.0
     capital_cierre: float = 0.0
 
@@ -61,18 +76,26 @@ class DaySummary:
 @dataclass
 class _Evento:
     timestamp: datetime
-    tipo: str  # "capture" | "payout"
-    wallet_id: str
-    wallet_name: str
+    tipo: str  # "capture" | "payout" | "aporte" | "split" | "merge"
+    wallet_id: str = ""
+    wallet_name: str = ""
     rendimiento: float = 0.0  # solo "payout"; lo completa la captura emparejada
+    monto: float = 0.0  # solo "aporte"
     pago: "_Evento | None" = None  # solo "capture": referencia a su evento de pago
     dias_acumulados: int = 1  # solo "capture": cuántos días de rendimiento acumula su pago
+    ancla_id: str = ""  # solo "split"/"merge": billetera que se queda con el umbral
+    socio_id: str = ""  # solo "split"/"merge": billetera que recibe el excedente
+    umbral: float = 0.0  # solo "split"
 
 
 def simulate(
-    start_date: date, end_date: date, principal: float, wallets: list[Wallet]
+    aportes: list[tuple[date, float]], end_date: date, wallets: list[Wallet]
 ) -> list[DaySummary]:
-    """Reconstruye día a día el capital del rulo entre start_date y end_date (inclusive).
+    """Reconstruye día a día el capital del rulo hasta end_date (inclusive).
+
+    `aportes` es la lista de inyecciones de capital (fecha, monto) — el primer
+    aporte cronológico marca el arranque de la simulación, y aportes
+    posteriores (ej. uno por mes) se suman al capital en su propia fecha.
 
     Cada captura genera un rendimiento pendiente que se acredita 24hs después
     (en el payout_time de la billetera). Si esa billetera no procesa pagos en
@@ -85,10 +108,35 @@ def simulate(
     Simplificación: usa la TNA y los horarios *actuales* de cada billetera para
     todo el rango histórico, no reconstruye cambios pasados de tasa u horario.
     """
-    eventos: list[_Evento] = []
+    start_date = min(fecha for fecha, _ in aportes)
+    wallets_by_id = {w.id: w for w in wallets}
+
+    eventos: list[_Evento] = [
+        _Evento(datetime.combine(fecha, time.min), "aporte", monto=monto)
+        for fecha, monto in aportes
+    ]
     fecha = start_date
     while fecha <= end_date:
         weekday = fecha.weekday()
+
+        if weekday == 5:  # sábado: posible split de fin de semana
+            for wallet in wallets:
+                socio = wallets_by_id.get(wallet.reparto_socio_id) if wallet.reparto_socio_id else None
+                if wallet.activo and socio is not None and socio.activo:
+                    split_ts = datetime.combine(fecha, _parse_hhmm(wallet.reparto_hora))
+                    merge_ts = datetime.combine(
+                        fecha + timedelta(days=2), _parse_hhmm(wallet.reparto_hora)
+                    )
+                    eventos.append(
+                        _Evento(
+                            split_ts, "split",
+                            ancla_id=wallet.id, socio_id=socio.id, umbral=wallet.reparto_umbral,
+                        )
+                    )
+                    eventos.append(
+                        _Evento(merge_ts, "merge", ancla_id=wallet.id, socio_id=socio.id)
+                    )
+
         for wallet in wallets:
             if not wallet.activo or weekday not in wallet.active_weekdays:
                 continue
@@ -115,39 +163,73 @@ def simulate(
             eventos.append(evento_pago)
         fecha += timedelta(days=1)
 
-    eventos.sort(key=lambda e: (e.timestamp, e.tipo != "payout", e.wallet_id))
+    orden_tipo = {"aporte": 0, "payout": 1, "merge": 2, "split": 3, "capture": 4}
+    eventos.sort(key=lambda e: (e.timestamp, orden_tipo[e.tipo], e.wallet_id))
 
-    wallets_by_id = {w.id: w for w in wallets}
-    capital = principal
+    capital = 0.0
+    en_reparto = False
+    pozos: dict[str, float] = {}
     summaries: dict[date, DaySummary] = {}
+
+    def capital_total() -> float:
+        return sum(pozos.values()) if en_reparto else capital
+
+    def capital_de(wallet_id: str) -> float:
+        if en_reparto and wallet_id in pozos:
+            return pozos[wallet_id]
+        return capital
 
     def summary_for(d: date) -> DaySummary:
         if d not in summaries:
-            summaries[d] = DaySummary(date=d, capital_apertura=capital)
+            summaries[d] = DaySummary(date=d, capital_apertura=capital_total())
         return summaries[d]
 
     for evento in eventos:
         dia = summary_for(evento.timestamp.date())
         if evento.tipo == "capture":
             wallet = wallets_by_id[evento.wallet_id]
-            rendimiento = daily_yield(capital, wallet.default_tna)
+            disponible = capital_de(evento.wallet_id)
+            base = disponible
+            limitado = False
+            if disponible < wallet.monto_minimo:
+                base = 0.0
+                limitado = disponible > 0
+            elif wallet.monto_maximo is not None and disponible > wallet.monto_maximo:
+                base = wallet.monto_maximo
+                limitado = True
+            rendimiento = daily_yield(base, wallet.default_tna)
             dia.captures.append(
                 CaptureEvent(
                     wallet_id=wallet.id,
                     wallet_name=wallet.name,
                     timestamp=evento.timestamp,
-                    monto_capturado=capital,
+                    monto_capturado=disponible,
                     tna=wallet.default_tna,
                     rendimiento=rendimiento,
                     dias_acumulados=evento.dias_acumulados,
+                    limitado=limitado,
                 )
             )
             dia.rendimiento_generado += rendimiento
             evento.pago.rendimiento = rendimiento * evento.dias_acumulados
-        else:
-            capital += evento.rendimiento
+        elif evento.tipo == "payout":
+            if en_reparto and evento.wallet_id in pozos:
+                pozos[evento.wallet_id] += evento.rendimiento
+            else:
+                capital += evento.rendimiento
             dia.rendimiento_acreditado += evento.rendimiento
-        dia.capital_cierre = capital
+        elif evento.tipo == "aporte":
+            capital += evento.monto
+            dia.aporte_recibido += evento.monto
+        elif evento.tipo == "split":
+            monto_ancla = min(capital, evento.umbral)
+            pozos = {evento.ancla_id: monto_ancla, evento.socio_id: capital - monto_ancla}
+            en_reparto = True
+        else:  # "merge"
+            capital = pozos.get(evento.ancla_id, 0.0) + pozos.get(evento.socio_id, 0.0)
+            pozos = {}
+            en_reparto = False
+        dia.capital_cierre = capital_total()
 
     return [summaries[d] for d in sorted(summaries) if start_date <= d <= end_date]
 
@@ -176,3 +258,46 @@ def proxima_captura(desde: datetime, wallets: list[Wallet]) -> tuple[datetime, W
     if not candidatos:
         return None
     return min(candidatos, key=lambda item: item[0])
+
+
+def billetera_actual(desde: datetime, wallets: list[Wallet]) -> tuple[datetime, Wallet] | None:
+    """Encuentra la última captura ya ocurrida antes de `desde` — dónde está la
+    plata físicamente en este momento, según el rulo.
+
+    Busca hasta 8 días atrás, simétrico a `proxima_captura`.
+    """
+    activos = [w for w in wallets if w.activo]
+    if not activos:
+        return None
+
+    candidatos: list[tuple[datetime, Wallet]] = []
+    for dias in range(8):
+        fecha = desde.date() - timedelta(days=dias)
+        weekday = fecha.weekday()
+        for wallet in activos:
+            if weekday not in wallet.active_weekdays:
+                continue
+            ts = datetime.combine(fecha, _parse_hhmm(wallet.capture_time))
+            if ts <= desde:
+                candidatos.append((ts, wallet))
+
+    if not candidatos:
+        return None
+    return max(candidatos, key=lambda item: item[0])
+
+
+def capital_simple(aportes: list[tuple[date, float]], tna_percent: float, hasta: date) -> float:
+    """Capital resultante de dejar cada aporte quieto (interés simple, sin
+    capitalizar) desde su propia fecha hasta `hasta`, a una TNA fija."""
+    return sum(
+        monto + monto * (tna_percent / 100) * ((hasta - fecha).days + 1) / 365
+        for fecha, monto in aportes
+    )
+
+
+def tasa_efectiva_anual(principal_total: float, capital_final: float, dias: int) -> float:
+    """TEA (%) implícita en haber convertido principal_total en capital_final
+    a lo largo de `dias` días corridos."""
+    if principal_total <= 0 or dias <= 0:
+        return 0.0
+    return ((capital_final / principal_total) ** (365 / dias) - 1) * 100

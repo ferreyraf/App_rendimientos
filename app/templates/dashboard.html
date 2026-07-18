@@ -3,6 +3,31 @@
 <h1>{{ hoy.strftime("%d/%m/%Y") }}</h1>
 <p class="subtitle">Capturas de hoy, calculadas por la simulación del rulo</p>
 
+<div class="kpi-row">
+  <div class="stat-tile">
+    <p class="stat-label">Ganancia neta acumulada</p>
+    <p class="stat-value {{ 'positivo' if ganancia_neta >= 0 else 'negativo' }}">${{ "%.2f"|format(ganancia_neta) }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">TEA lograda por el rulo</p>
+    <p class="stat-value">{{ "%.2f"|format(tea_lograda) }}%</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Ganancia extra por rotar vs. la mejor billetera quieta</p>
+    <p class="stat-value {{ 'positivo' if ventaja_rulo >= 0 else 'negativo' }}">${{ "%.2f"|format(ventaja_rulo) }}</p>
+  </div>
+</div>
+
+{% if actual %}
+<section class="chart-card">
+  <p class="subtitle">Liquidez</p>
+  <p class="total">
+    Tu dinero está ahora en <strong>{{ actual.wallet_name }}</strong>
+    (desde las {{ actual.timestamp.strftime("%H:%M") }}{% if actual.timestamp.date() != hoy %} del {{ actual.timestamp.strftime("%d/%m") }}{% endif %})
+  </p>
+</section>
+{% endif %}
+
 {% if proxima %}
 <section class="chart-card">
   <p class="subtitle">Próxima acción</p>
@@ -36,6 +61,7 @@
       <td>
         ${{ "%.2f"|format(c.rendimiento) }}
         {% if c.dias_acumulados > 1 %}<span class="badge">acredita ×{{ c.dias_acumulados }} el próximo día hábil (incluye fin de semana)</span>{% endif %}
+        {% if c.limitado %}<span class="badge badge-warning">limitado por piso/techo</span>{% endif %}
       </td>
       <td>{% if c.timestamp > ahora %}<span class="badge">pendiente</span>{% else %}listo{% endif %}</td>
     </tr>

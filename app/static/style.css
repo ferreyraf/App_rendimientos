@@ -1,3 +1,82 @@
+:root {
+  color-scheme: light;
+  --surface:         #fcfcfb;
+  --page:            #f9f9f7;
+  --text-primary:    #0b0b0b;
+  --text-secondary:  #52514e;
+  --text-muted:      #898781;
+  --gridline:        #e1e0d9;
+  --baseline:        #c3c2b7;
+  --border:          rgba(11, 11, 11, 0.10);
+  --success-text:    #006300;
+
+  --series-1: #2a78d6; /* blue */
+  --series-2: #008300; /* green */
+  --series-3: #e87ba4; /* magenta */
+  --series-4: #eda100; /* yellow */
+  --series-5: #1baf7a; /* aqua */
+  --series-6: #eb6834; /* orange */
+  --series-7: #4a3aa7; /* violet */
+  --series-8: #e34948; /* red */
+
+  --status-good:     #0ca30c;
+  --status-warning:  #fab219;
+  --status-serious:  #ec835a;
+  --status-critical: #d03b3b;
+
+  --neutral-fill: #cbd5e1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface:         #1a1a19;
+    --page:            #0d0d0d;
+    --text-primary:    #ffffff;
+    --text-secondary:  #c3c2b7;
+    --text-muted:      #898781;
+    --gridline:        #2c2c2a;
+    --baseline:        #383835;
+    --border:          rgba(255, 255, 255, 0.10);
+    --success-text:    #0ca30c;
+
+    --series-1: #3987e5;
+    --series-2: #008300;
+    --series-3: #d55181;
+    --series-4: #c98500;
+    --series-5: #199e70;
+    --series-6: #d95926;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+
+    --neutral-fill: #383835;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface:         #1a1a19;
+  --page:            #0d0d0d;
+  --text-primary:    #ffffff;
+  --text-secondary:  #c3c2b7;
+  --text-muted:      #898781;
+  --gridline:        #2c2c2a;
+  --baseline:        #383835;
+  --border:          rgba(255, 255, 255, 0.10);
+  --success-text:    #0ca30c;
+
+  --series-1: #3987e5;
+  --series-2: #008300;
+  --series-3: #d55181;
+  --series-4: #c98500;
+  --series-5: #199e70;
+  --series-6: #d95926;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+
+  --neutral-fill: #383835;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -5,8 +84,8 @@
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   margin: 0;
-  background: #f5f6f8;
-  color: #1a1a1a;
+  background: var(--page);
+  color: var(--text-primary);
 }
 
 nav {
@@ -18,7 +97,7 @@ nav {
 }
 
 nav .brand {
-  color: #fff;
+  color: #ffffff;
   font-weight: 600;
   margin-right: 1rem;
 }
@@ -30,7 +109,7 @@ nav a {
 }
 
 nav a:hover {
-  color: #fff;
+  color: #ffffff;
 }
 
 main {
@@ -44,14 +123,14 @@ h1 {
 }
 
 .subtitle {
-  color: #6b7280;
+  color: var(--text-secondary);
   margin-top: 0;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  background: #fff;
+  background: var(--surface);
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -60,14 +139,14 @@ table {
 th, td {
   text-align: left;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--gridline);
 }
 
 th {
-  background: #f9fafb;
+  background: var(--page);
   font-size: 0.85rem;
   text-transform: uppercase;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .inline-form {
@@ -82,7 +161,7 @@ th {
   gap: 0.35rem;
   align-items: center;
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .row-inactiva {
@@ -90,15 +169,17 @@ th {
 }
 
 .row-pendiente {
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 
 input[type="number"],
 input[type="time"],
 input[type="date"] {
   padding: 0.35rem 0.5rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--baseline);
   border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-primary);
 }
 
 input[type="number"] {
@@ -109,14 +190,14 @@ button {
   padding: 0.35rem 0.75rem;
   border: none;
   border-radius: 4px;
-  background: #2563eb;
+  background: var(--series-1);
   color: #fff;
   cursor: pointer;
   font-size: 0.9rem;
 }
 
 button:hover {
-  background: #1d4ed8;
+  filter: brightness(0.9);
 }
 
 .total {
@@ -125,11 +206,12 @@ button:hover {
 }
 
 .flash {
-  background: #fff;
-  border-left: 4px solid #2563eb;
+  background: var(--surface);
+  border-left: 4px solid var(--series-1);
   border-radius: 4px;
   padding: 0.75rem 1rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  color: var(--text-primary);
 }
 
 .badge {
@@ -137,19 +219,65 @@ button:hover {
   margin-left: 0.5rem;
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
-  background: #eef2ff;
-  color: #4338ca;
+  background: var(--gridline);
+  color: var(--text-secondary);
   font-size: 0.75rem;
   white-space: nowrap;
 }
 
+.badge-warning {
+  background: color-mix(in srgb, var(--status-warning) 25%, transparent);
+  color: var(--text-primary);
+}
+
 .day-card,
 .chart-card {
-  background: #fff;
+  background: var(--surface);
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.25rem;
+}
+
+.day-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+
+.day-summary::-webkit-details-marker {
+  display: none;
+}
+
+.day-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.5rem;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+details[open] > .day-summary::before {
+  transform: rotate(90deg);
+}
+
+.day-summary:hover {
+  color: var(--series-1);
+}
+
+.day-summary-figures {
+  font-weight: 400;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.day-card table {
+  margin-top: 1rem;
 }
 
 .day-card table,
@@ -165,7 +293,7 @@ button:hover {
 }
 
 .config-form label {
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.85rem;
   margin-top: 0.5rem;
 }
@@ -178,4 +306,40 @@ button:hover {
 .config-form button {
   margin-top: 1rem;
   align-self: flex-start;
+}
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.stat-tile {
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 1rem 1.25rem;
+}
+
+.stat-tile .stat-label {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  margin: 0 0 0.35rem;
+}
+
+.stat-tile .stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.stat-value.positivo {
+  color: var(--success-text);
+}
+
+.stat-value.negativo {
+  color: var(--status-critical);
 }

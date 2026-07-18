@@ -2,6 +2,39 @@
 {% block content %}
 <h1>Gráficos</h1>
 
+<div class="kpi-row">
+  <div class="stat-tile">
+    <p class="stat-label">TEA lograda por el rulo</p>
+    <p class="stat-value positivo">{{ "%.2f"|format(tea_rulo) }}%</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Promedio TNA nominal de las billeteras activas</p>
+    <p class="stat-value">{{ "%.2f"|format(tna_promedio) }}%</p>
+  </div>
+</div>
+
+<section class="chart-card">
+  <h2>Aportes vs. ganancia</h2>
+  <p class="subtitle">Cuánto del capital de hoy es plata que pusiste vos vs. cuánto generó el rulo</p>
+  <canvas id="aportesChart" height="120" role="img" aria-label="Capital aportado vs. ganancia generada, acumulado día a día"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Fecha</th><th>Aportado</th><th>Ganancia</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for point in capital_series %}
+          <tr>
+            <td>{{ point.date }}</td>
+            <td>${{ "%.2f"|format(point.aportado) }}</td>
+            <td>${{ "%.2f"|format(point.ganancia) }}</td>
+            <td>${{ "%.2f"|format(point.capital_cierre) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
 <section class="chart-card">
   <h2>Evolución del capital (interés compuesto)</h2>
   <canvas id="capitalChart" height="120" role="img" aria-label="Evolución del capital de cierre día a día"></canvas>
@@ -36,7 +69,7 @@
 
 <section class="chart-card">
   <h2>Rulo vs. quieto</h2>
-  <p class="subtitle">Capital final si hubieras dejado el capital inicial quieto en cada billetera (interés simple, sin rotar) vs. el resultado real del rulo</p>
+  <p class="subtitle">Capital final si hubieras dejado cada aporte quieto en cada billetera (interés simple, sin rotar) vs. el resultado real del rulo</p>
   <canvas id="comparacionChart" height="120" role="img" aria-label="Comparación del capital final del rulo contra dejar el capital quieto en cada billetera"></canvas>
   <details>
     <summary class="subtitle">Ver como tabla</summary>
@@ -53,15 +86,59 @@
 
 <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
 <script>
-  const ink = '#6b7280';
-  const grid = '#e5e7eb';
-  const seriesBlue = '#2563eb';
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+
+  const ink = token('--text-secondary');
+  const grid = token('--gridline');
+  const seriesBlue = token('--series-1');
+  const neutral = token('--neutral-fill');
   // Orden categórico fijo (mismo orden que las billeteras en el rulo).
-  const categorical = ['#2563eb', '#008300', '#e87ba4', '#eda100', '#1baf7a'];
+  const categorical = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--series-${n}`));
 
   const capitalSeries = {{ capital_series | tojson }};
   const rendimientoPorBilletera = {{ rendimiento_por_billetera | tojson }};
   const comparacion = {{ comparacion | tojson }};
+
+  new Chart(document.getElementById('aportesChart'), {
+    type: 'line',
+    data: {
+      labels: capitalSeries.map(p => p.date),
+      datasets: [
+        {
+          label: 'Aportado',
+          data: capitalSeries.map(p => p.aportado),
+          borderColor: categorical[0],
+          backgroundColor: categorical[0],
+          fill: 'origin',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.15,
+        },
+        {
+          label: 'Ganancia generada',
+          data: capitalSeries.map(p => p.aportado + p.ganancia),
+          borderColor: categorical[1],
+          backgroundColor: categorical[1],
+          fill: '-1',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.15,
+        },
+      ],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink, maxTicksLimit: 10 }, grid: { color: grid } },
+        y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { labels: { color: ink } },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      interaction: { mode: 'index', intersect: false },
+    },
+  });
 
   new Chart(document.getElementById('capitalChart'), {
     type: 'line',
@@ -120,7 +197,7 @@
       datasets: [{
         label: 'Capital final',
         data: comparacion.map(item => item.capital_final),
-        backgroundColor: comparacion.map(item => item.nombre === 'Rulo (real)' ? seriesBlue : '#cbd5e1'),
+        backgroundColor: comparacion.map(item => item.nombre === 'Rulo (real)' ? seriesBlue : neutral),
         borderRadius: 4,
       }],
     },

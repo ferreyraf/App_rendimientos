@@ -35,10 +35,13 @@
 
 <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
 <script>
-  const ink = '#6b7280';
-  const grid = '#e5e7eb';
-  const seriesBlue = '#2563eb';
-  const seriesGray = '#9ca3af';
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+
+  const ink = token('--text-secondary');
+  const grid = token('--gridline');
+  const seriesBlue = token('--series-1');
+  const seriesGray = token('--neutral-fill');
 
   const capitalSeries = {{ capital_series | tojson }};
   const labels = capitalSeries.map(p => p.date);
