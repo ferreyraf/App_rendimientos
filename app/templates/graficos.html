@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Gráficos</h1>
+
+<section class="chart-card">
+  <h2>Evolución del capital (interés compuesto)</h2>
+  <canvas id="capitalChart" height="120" role="img" aria-label="Evolución del capital de cierre día a día"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Fecha</th><th>Capital de cierre</th></tr></thead>
+      <tbody>
+        {% for point in capital_series %}
+          <tr><td>{{ point.date }}</td><td>${{ "%.2f"|format(point.capital_cierre) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
+<section class="chart-card">
+  <h2>Rendimiento total por billetera</h2>
+  <canvas id="billeteraChart" height="120" role="img" aria-label="Rendimiento total generado por billetera en el período"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Billetera</th><th>Rendimiento total</th></tr></thead>
+      <tbody>
+        {% for item in rendimiento_por_billetera %}
+          <tr><td>{{ item.nombre }}</td><td>${{ "%.2f"|format(item.rendimiento) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  const ink = '#6b7280';
+  const grid = '#e5e7eb';
+  const seriesBlue = '#2563eb';
+  // Orden categórico fijo (mismo orden que las billeteras en el rulo).
+  const categorical = ['#2563eb', '#008300', '#e87ba4', '#eda100', '#1baf7a'];
+
+  const capitalSeries = {{ capital_series | tojson }};
+  const rendimientoPorBilletera = {{ rendimiento_por_billetera | tojson }};
+
+  new Chart(document.getElementById('capitalChart'), {
+    type: 'line',
+    data: {
+      labels: capitalSeries.map(p => p.date),
+      datasets: [{
+        label: 'Capital de cierre',
+        data: capitalSeries.map(p => p.capital_cierre),
+        borderColor: seriesBlue,
+        backgroundColor: seriesBlue,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.15,
+      }],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink, maxTicksLimit: 10 }, grid: { color: grid } },
+        y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      interaction: { mode: 'index', intersect: false },
+    },
+  });
+
+  new Chart(document.getElementById('billeteraChart'), {
+    type: 'bar',
+    data: {
+      labels: rendimientoPorBilletera.map(item => item.nombre),
+      datasets: [{
+        label: 'Rendimiento total',
+        data: rendimientoPorBilletera.map(item => item.rendimiento),
+        backgroundColor: rendimientoPorBilletera.map((_, i) => categorical[i % categorical.length]),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink }, grid: { display: false } },
+        y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'nearest', intersect: true },
+      },
+    },
+  });
+</script>
+{% endblock %}

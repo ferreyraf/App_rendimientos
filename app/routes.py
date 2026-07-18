@@ -1,9 +1,9 @@
 from datetime import date
 
-from flask import Blueprint, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from . import db
-from .domain import Wallet, active_wallets_for_date, daily_yield
+from .domain import Wallet, simulate
 
 bp = Blueprint("main", __name__)
 
@@ -13,6 +13,7 @@ def _wallet_from_row(row):
         id=row["id"],
         name=row["name"],
         capture_time=row["capture_time"],
+        payout_time=row["payout_time"],
         active_weekdays=tuple(int(x) for x in row["active_weekdays"].split(",")),
         default_tna=row["tna"],
     )
@@ -21,42 +22,70 @@ def _wallet_from_row(row):
 @bp.route("/")
 def dashboard():
     conn = db.get_db()
-    today = date.today()
-    all_wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
-    active = active_wallets_for_date(today, all_wallets)
-    captures_today = {c["wallet_id"]: c for c in db.get_captures_for_date(conn, today.isoformat())}
-    total_hoy = sum(c["rendimiento"] for c in captures_today.values())
+    config = db.get_config(conn)
+    if config is None:
+        conn.close()
+        return redirect(url_for("main.configuracion"))
+
+    principal, start_date = config
+    wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     conn.close()
-    return render_template(
-        "dashboard.html",
-        today=today,
-        active_wallets=active,
-        captures_today=captures_today,
-        total_hoy=total_hoy,
-    )
+
+    hoy = date.today()
+    summaries = simulate(start_date, hoy, principal, wallets)
+    summary = summaries[-1] if summaries else None
+
+    return render_template("dashboard.html", summary=summary, hoy=hoy)
 
 
-@bp.route("/capturar", methods=["POST"])
-def capturar():
+@bp.route("/configuracion", methods=["GET", "POST"])
+def configuracion():
     conn = db.get_db()
-    wallet_id = request.form["wallet_id"]
-    fecha = request.form.get("fecha") or date.today().isoformat()
-    monto = float(request.form["monto"])
-    wallet_row = db.get_wallet(conn, wallet_id)
-    tna = wallet_row["tna"]
-    rendimiento = daily_yield(monto, tna)
-    db.upsert_capture(conn, wallet_id, fecha, monto, tna, rendimiento)
+
+    if request.method == "POST":
+        try:
+            principal = float(request.form["principal"])
+            start_date = date.fromisoformat(request.form["start_date"])
+        except (KeyError, ValueError):
+            conn.close()
+            flash("Datos inválidos: revisá el capital inicial y la fecha.")
+            return redirect(url_for("main.configuracion"))
+
+        if principal <= 0:
+            conn.close()
+            flash("El capital inicial debe ser mayor a cero.")
+            return redirect(url_for("main.configuracion"))
+        if start_date > date.today():
+            conn.close()
+            flash("La fecha de inicio no puede ser futura.")
+            return redirect(url_for("main.configuracion"))
+
+        db.set_config(conn, principal, start_date)
+        conn.close()
+        flash("Configuración guardada.")
+        return redirect(url_for("main.dashboard"))
+
+    config = db.get_config(conn)
     conn.close()
-    return redirect(url_for("main.dashboard"))
+    return render_template("configuracion.html", config=config)
 
 
 @bp.route("/historial")
 def historial():
     conn = db.get_db()
-    captures = db.get_all_captures(conn)
-    total_rendimiento = sum(c["rendimiento"] for c in captures)
+    config = db.get_config(conn)
+    if config is None:
+        conn.close()
+        return redirect(url_for("main.configuracion"))
+
+    principal, start_date = config
+    wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     conn.close()
-    return render_template("history.html", captures=captures, total_rendimiento=total_rendimiento)
+
+    summaries = simulate(start_date, date.today(), principal, wallets)
+    summaries.reverse()  # más reciente primero
+
+    return render_template("history.html", summaries=summaries)
 
 
 @bp.route("/billeteras")
@@ -71,6 +100,44 @@ def billeteras():
 def actualizar_billetera(wallet_id):
     conn = db.get_db()
     tna = float(request.form["tna"])
-    db.update_wallet_tna(conn, wallet_id, tna)
+    capture_time = request.form["capture_time"]
+    payout_time = request.form["payout_time"]
+    db.update_wallet(conn, wallet_id, tna, capture_time, payout_time)
     conn.close()
     return redirect(url_for("main.billeteras"))
+
+
+@bp.route("/graficos")
+def graficos():
+    conn = db.get_db()
+    config = db.get_config(conn)
+    if config is None:
+        conn.close()
+        return redirect(url_for("main.configuracion"))
+
+    principal, start_date = config
+    wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    conn.close()
+
+    summaries = simulate(start_date, date.today(), principal, wallets)
+
+    capital_series = [
+        {"date": s.date.isoformat(), "capital_cierre": s.capital_cierre} for s in summaries
+    ]
+
+    rendimiento_por_id = {w.id: 0.0 for w in wallets}
+    for s in summaries:
+        for c in s.captures:
+            rendimiento_por_id[c.wallet_id] += c.rendimiento
+
+    # Lista (no dict) para preservar el orden natural de las billeteras: Flask
+    # serializa dicts con sort_keys=True en `tojson`, lo que reordenaría alfabéticamente.
+    rendimiento_por_billetera = [
+        {"nombre": w.name, "rendimiento": rendimiento_por_id[w.id]} for w in wallets
+    ]
+
+    return render_template(
+        "graficos.html",
+        capital_series=capital_series,
+        rendimiento_por_billetera=rendimiento_por_billetera,
+    )

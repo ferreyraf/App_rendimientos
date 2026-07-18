@@ -12,8 +12,17 @@
     <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
     <a href="{{ url_for('main.historial') }}">Historial</a>
     <a href="{{ url_for('main.billeteras') }}">Billeteras</a>
+    <a href="{{ url_for('main.graficos') }}">Gráficos</a>
+    <a href="{{ url_for('main.configuracion') }}">Configuración</a>
   </nav>
   <main>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <p class="flash">{{ message }}</p>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
     {% block content %}{% endblock %}
   </main>
 </body>

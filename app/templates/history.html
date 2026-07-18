@@ -2,30 +2,38 @@
 {% block content %}
 <h1>Historial</h1>
 
-<table>
-  <thead>
-    <tr>
-      <th>Fecha</th>
-      <th>Billetera</th>
-      <th>Monto</th>
-      <th>TNA aplicada</th>
-      <th>Rendimiento</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for c in captures %}
-    <tr>
-      <td>{{ c["fecha"] }}</td>
-      <td>{{ c["wallet_name"] }}</td>
-      <td>${{ "%.2f"|format(c["monto"]) }}</td>
-      <td>{{ "%.2f"|format(c["tna_aplicada"]) }}%</td>
-      <td>${{ "%.2f"|format(c["rendimiento"]) }}</td>
-    </tr>
-  {% else %}
-    <tr><td colspan="5">Todavía no hay capturas cargadas.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-
-<p class="total">Rendimiento total acumulado: <strong>${{ "%.2f"|format(total_rendimiento) }}</strong></p>
+{% for s in summaries %}
+<section class="day-card">
+  <h2>{{ s.date.strftime("%d/%m/%Y") }}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Hora</th>
+        <th>Billetera</th>
+        <th>Monto capturado</th>
+        <th>Rendimiento</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in s.captures %}
+      <tr>
+        <td>{{ c.timestamp.strftime("%H:%M") }}</td>
+        <td>{{ c.wallet_name }}</td>
+        <td>${{ "%.2f"|format(c.monto_capturado) }}</td>
+        <td>${{ "%.2f"|format(c.rendimiento) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4">Sin capturas.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="total">
+    Rendimiento generado: ${{ "%.2f"|format(s.rendimiento_generado) }} ·
+    Acreditado: ${{ "%.2f"|format(s.rendimiento_acreditado) }} ·
+    Capital de cierre: <strong>${{ "%.2f"|format(s.capital_cierre) }}</strong>
+  </p>
+</section>
+{% else %}
+<p class="subtitle">Todavía no hay historial.</p>
+{% endfor %}
 {% endblock %}

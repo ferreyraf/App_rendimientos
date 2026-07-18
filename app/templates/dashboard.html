@@ -1,43 +1,38 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ today.strftime("%d/%m/%Y") }}</h1>
-<p class="subtitle">Billeteras activas hoy y su horario de captura</p>
+<h1>{{ hoy.strftime("%d/%m/%Y") }}</h1>
+<p class="subtitle">Capturas de hoy, calculadas por la simulación del rulo</p>
 
+{% if summary %}
 <table>
   <thead>
     <tr>
+      <th>Hora</th>
       <th>Billetera</th>
-      <th>Hora captura</th>
-      <th>Monto cargado</th>
+      <th>Monto capturado</th>
+      <th>TNA</th>
       <th>Rendimiento</th>
-      <th>Cargar monto</th>
     </tr>
   </thead>
   <tbody>
-  {% for w in active_wallets %}
-    {% set c = captures_today.get(w.id) %}
+  {% for c in summary.captures %}
     <tr>
-      <td>{{ w.name }}</td>
-      <td>{{ w.capture_time }}hs</td>
-      <td>{{ "$%.2f"|format(c["monto"]) if c else "—" }}</td>
-      <td>{{ "$%.2f"|format(c["rendimiento"]) if c else "—" }}</td>
-      <td>
-        <form method="post" action="{{ url_for('main.capturar') }}" class="inline-form">
-          <input type="hidden" name="wallet_id" value="{{ w.id }}">
-          <input type="hidden" name="fecha" value="{{ today.isoformat() }}">
-          <input type="number" step="0.01" min="0" name="monto"
-                 placeholder="Monto" value="{{ c['monto'] if c else '' }}" required>
-          <button type="submit">Guardar</button>
-        </form>
-      </td>
+      <td>{{ c.timestamp.strftime("%H:%M") }}</td>
+      <td>{{ c.wallet_name }}</td>
+      <td>${{ "%.2f"|format(c.monto_capturado) }}</td>
+      <td>{{ "%.2f"|format(c.tna) }}%</td>
+      <td>${{ "%.2f"|format(c.rendimiento) }}</td>
     </tr>
   {% else %}
-    <tr><td colspan="5">No hay billeteras activas hoy.</td></tr>
+    <tr><td colspan="5">Ninguna billetera captura hoy.</td></tr>
   {% endfor %}
   </tbody>
 </table>
 
-{% if captures_today %}
-<p class="total">Rendimiento total hoy: <strong>${{ "%.2f"|format(total_hoy) }}</strong></p>
+<p class="total">Rendimiento generado hoy: <strong>${{ "%.2f"|format(summary.rendimiento_generado) }}</strong></p>
+<p class="total">Rendimiento acreditado hoy: <strong>${{ "%.2f"|format(summary.rendimiento_acreditado) }}</strong></p>
+<p class="total">Capital de cierre: <strong>${{ "%.2f"|format(summary.capital_cierre) }}</strong></p>
+{% else %}
+<p class="subtitle">Todavía no hay datos para hoy.</p>
 {% endif %}
 {% endblock %}
