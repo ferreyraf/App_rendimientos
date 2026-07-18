@@ -16,7 +16,23 @@
     <p class="stat-label">Ganancia extra por rotar vs. la mejor billetera quieta</p>
     <p class="stat-value {{ 'positivo' if ventaja_rulo >= 0 else 'negativo' }}">${{ "%.2f"|format(ventaja_rulo) }}</p>
   </div>
+  <div class="stat-tile">
+    <p class="stat-label">Total aportado</p>
+    <p class="stat-value">${{ "%.2f"|format(total_aportado) }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Total egresos (cuota fija + impuestos)</p>
+    <p class="stat-value negativo">${{ "%.2f"|format(total_egresos) }}</p>
+  </div>
 </div>
+
+<section class="chart-card">
+  <p class="subtitle">Vencimiento de impuestos</p>
+  <p class="total">
+    Próximo vencimiento: <strong>{{ vencimiento.strftime("%d/%m/%Y") }}</strong>
+    — faltan <strong>{{ dias_para_vencimiento }} día(s)</strong>
+  </p>
+</section>
 
 {% if actual or proxima %}
 <div class="two-col">

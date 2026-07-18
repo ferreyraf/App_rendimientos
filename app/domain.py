@@ -69,6 +69,8 @@ class DaySummary:
     rendimiento_generado: float = 0.0
     rendimiento_acreditado: float = 0.0
     aporte_recibido: float = 0.0
+    ingreso_recibido: float = 0.0
+    egreso_pagado: float = 0.0
     capital_apertura: float = 0.0
     capital_cierre: float = 0.0
 
@@ -76,11 +78,11 @@ class DaySummary:
 @dataclass
 class _Evento:
     timestamp: datetime
-    tipo: str  # "capture" | "payout" | "aporte" | "split" | "merge"
+    tipo: str  # "capture" | "payout" | "aporte" | "ingreso" | "egreso" | "split" | "merge"
     wallet_id: str = ""
     wallet_name: str = ""
     rendimiento: float = 0.0  # solo "payout"; lo completa la captura emparejada
-    monto: float = 0.0  # solo "aporte"
+    monto: float = 0.0  # solo "aporte"/"ingreso"/"egreso"
     pago: "_Evento | None" = None  # solo "capture": referencia a su evento de pago
     dias_acumulados: int = 1  # solo "capture": cuántos días de rendimiento acumula su pago
     ancla_id: str = ""  # solo "split"/"merge": billetera que se queda con el umbral
@@ -89,13 +91,24 @@ class _Evento:
 
 
 def simulate(
-    aportes: list[tuple[date, float]], end_date: date, wallets: list[Wallet]
+    aportes: list[tuple[date, float]],
+    egresos: list[tuple[date, float]],
+    end_date: date,
+    wallets: list[Wallet],
+    cuota_fija: float = 0.0,
+    sueldo: float = 0.0,
 ) -> list[DaySummary]:
     """Reconstruye día a día el capital del rulo hasta end_date (inclusive).
 
     `aportes` es la lista de inyecciones de capital (fecha, monto) — el primer
     aporte cronológico marca el arranque de la simulación, y aportes
     posteriores (ej. uno por mes) se suman al capital en su propia fecha.
+
+    `egresos` es la lista de retiros con fecha puntual (ej. impuestos cargados
+    a mano). `cuota_fija`, si es mayor a cero, se retira automáticamente el
+    último día calendario de cada mes dentro del rango simulado (ej. cuotas de
+    deudas fijas). `sueldo`, si es mayor a cero, se acredita automáticamente
+    el 5to día hábil (lunes a viernes) de cada mes.
 
     Cada captura genera un rendimiento pendiente que se acredita 24hs después
     (en el payout_time de la billetera). Si esa billetera no procesa pagos en
@@ -114,10 +127,26 @@ def simulate(
     eventos: list[_Evento] = [
         _Evento(datetime.combine(fecha, time.min), "aporte", monto=monto)
         for fecha, monto in aportes
+    ] + [
+        _Evento(datetime.combine(fecha, time.min), "egreso", monto=monto)
+        for fecha, monto in egresos
     ]
     fecha = start_date
     while fecha <= end_date:
         weekday = fecha.weekday()
+
+        ultimo_dia_del_mes = (fecha + timedelta(days=1)).month != fecha.month
+        if ultimo_dia_del_mes and cuota_fija > 0:
+            eventos.append(_Evento(datetime.combine(fecha, time.min), "egreso", monto=cuota_fija))
+
+        if fecha.day == 1 and sueldo > 0:
+            d, habiles = fecha, 0
+            while habiles < 5:
+                if d.weekday() in WEEKDAYS:
+                    habiles += 1
+                if habiles < 5:
+                    d += timedelta(days=1)
+            eventos.append(_Evento(datetime.combine(d, time.min), "ingreso", monto=sueldo))
 
         if weekday == 5:  # sábado: posible split de fin de semana
             for wallet in wallets:
@@ -163,12 +192,14 @@ def simulate(
             eventos.append(evento_pago)
         fecha += timedelta(days=1)
 
-    orden_tipo = {"aporte": 0, "payout": 1, "merge": 2, "split": 3, "capture": 4}
+    orden_tipo = {"aporte": 0, "ingreso": 0, "egreso": 0, "payout": 1, "merge": 2, "split": 3, "capture": 4}
     eventos.sort(key=lambda e: (e.timestamp, orden_tipo[e.tipo], e.wallet_id))
 
     capital = 0.0
     en_reparto = False
     pozos: dict[str, float] = {}
+    reparto_ancla_id: str | None = None
+    reparto_umbral_actual: float | None = None
     summaries: dict[date, DaySummary] = {}
 
     def capital_total() -> float:
@@ -178,6 +209,36 @@ def simulate(
         if en_reparto and wallet_id in pozos:
             return pozos[wallet_id]
         return capital
+
+    def sumar_capital(monto: float) -> None:
+        # Un aporte/ingreso que cae en plena ventana de split no puede
+        # sumarse al `capital` global: ese valor queda "dormido" hasta el
+        # merge, que lo pisa por completo (pozos[ancla] + pozos[socio]) y el
+        # monto se perdería. Se reparte igual que el split original: primero
+        # completa el umbral del ancla, el resto va al socio.
+        nonlocal capital
+        if en_reparto:
+            disponible_ancla = pozos.get(reparto_ancla_id, 0.0)
+            espacio = max((reparto_umbral_actual or 0.0) - disponible_ancla, 0.0)
+            a_ancla = min(monto, espacio)
+            pozos[reparto_ancla_id] = disponible_ancla + a_ancla
+            socio_id = next(k for k in pozos if k != reparto_ancla_id)
+            pozos[socio_id] = pozos.get(socio_id, 0.0) + (monto - a_ancla)
+        else:
+            capital += monto
+
+    def restar_capital(monto: float) -> None:
+        # Simétrico: primero descuenta del pozo del socio (hasta dejarlo en
+        # 0) y el remanente sale del ancla.
+        nonlocal capital
+        if en_reparto:
+            socio_id = next(k for k in pozos if k != reparto_ancla_id)
+            disponible_socio = pozos.get(socio_id, 0.0)
+            del_socio = min(monto, disponible_socio)
+            pozos[socio_id] = disponible_socio - del_socio
+            pozos[reparto_ancla_id] = pozos.get(reparto_ancla_id, 0.0) - (monto - del_socio)
+        else:
+            capital -= monto
 
     def summary_for(d: date) -> DaySummary:
         if d not in summaries:
@@ -219,16 +280,26 @@ def simulate(
                 capital += evento.rendimiento
             dia.rendimiento_acreditado += evento.rendimiento
         elif evento.tipo == "aporte":
-            capital += evento.monto
+            sumar_capital(evento.monto)
             dia.aporte_recibido += evento.monto
+        elif evento.tipo == "ingreso":
+            sumar_capital(evento.monto)
+            dia.ingreso_recibido += evento.monto
+        elif evento.tipo == "egreso":
+            restar_capital(evento.monto)
+            dia.egreso_pagado += evento.monto
         elif evento.tipo == "split":
             monto_ancla = min(capital, evento.umbral)
             pozos = {evento.ancla_id: monto_ancla, evento.socio_id: capital - monto_ancla}
             en_reparto = True
+            reparto_ancla_id = evento.ancla_id
+            reparto_umbral_actual = evento.umbral
         else:  # "merge"
             capital = pozos.get(evento.ancla_id, 0.0) + pozos.get(evento.socio_id, 0.0)
             pozos = {}
             en_reparto = False
+            reparto_ancla_id = None
+            reparto_umbral_actual = None
         dia.capital_cierre = capital_total()
 
     return [summaries[d] for d in sorted(summaries) if start_date <= d <= end_date]
@@ -301,3 +372,19 @@ def tasa_efectiva_anual(principal_total: float, capital_final: float, dias: int)
     if principal_total <= 0 or dias <= 0:
         return 0.0
     return ((capital_final / principal_total) ** (365 / dias) - 1) * 100
+
+
+def proximo_vencimiento_impuestos(desde: date, dia_limite: int = 10) -> date:
+    """Próxima fecha límite de pago: el `dia_limite` del mes actual si todavía
+    no pasó, o del mes siguiente si ya pasó. Si cae sábado o domingo, se
+    adelanta al viernes anterior."""
+    if desde.day <= dia_limite:
+        vencimiento = desde.replace(day=dia_limite)
+    elif desde.month == 12:
+        vencimiento = date(desde.year + 1, 1, dia_limite)
+    else:
+        vencimiento = date(desde.year, desde.month + 1, dia_limite)
+
+    if vencimiento.weekday() in WEEKEND:
+        vencimiento -= timedelta(days=vencimiento.weekday() - 4)
+    return vencimiento

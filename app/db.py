@@ -28,6 +28,18 @@ CREATE TABLE IF NOT EXISTS aportes (
     fecha TEXT NOT NULL,
     monto REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS impuestos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL,
+    monto REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS config_egresos (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    cuota_fija REAL NOT NULL DEFAULT 0,
+    sueldo REAL NOT NULL DEFAULT 0
+);
 """
 
 
@@ -107,4 +119,37 @@ def add_aporte(conn, fecha, monto):
 
 def delete_aporte(conn, aporte_id):
     conn.execute("DELETE FROM aportes WHERE id = ?", (aporte_id,))
+    conn.commit()
+
+
+def get_impuestos(conn):
+    rows = conn.execute("SELECT id, fecha, monto FROM impuestos ORDER BY fecha, id").fetchall()
+    return [(row["id"], date.fromisoformat(row["fecha"]), row["monto"]) for row in rows]
+
+
+def add_impuesto(conn, fecha, monto):
+    conn.execute(
+        "INSERT INTO impuestos (fecha, monto) VALUES (?, ?)", (fecha.isoformat(), monto)
+    )
+    conn.commit()
+
+
+def delete_impuesto(conn, impuesto_id):
+    conn.execute("DELETE FROM impuestos WHERE id = ?", (impuesto_id,))
+    conn.commit()
+
+
+def get_config_egresos(conn):
+    row = conn.execute("SELECT cuota_fija, sueldo FROM config_egresos WHERE id = 1").fetchone()
+    if row is None:
+        return 0.0, 0.0
+    return row["cuota_fija"], row["sueldo"]
+
+
+def set_config_egresos(conn, cuota_fija, sueldo):
+    conn.execute(
+        "INSERT INTO config_egresos (id, cuota_fija, sueldo) VALUES (1, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET cuota_fija = excluded.cuota_fija, sueldo = excluded.sueldo",
+        (cuota_fija, sueldo),
+    )
     conn.commit()

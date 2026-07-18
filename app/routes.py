@@ -10,6 +10,7 @@ from .domain import (
     billetera_actual,
     capital_simple,
     proxima_captura,
+    proximo_vencimiento_impuestos,
     simulate,
     tasa_efectiva_anual,
 )
@@ -39,6 +40,10 @@ def _aportes_pares(conn):
     return [(fecha, monto) for _, fecha, monto in db.get_aportes(conn)]
 
 
+def _egresos_pares(conn):
+    return [(fecha, monto) for _, fecha, monto in db.get_impuestos(conn)]
+
+
 @bp.route("/")
 def dashboard():
     conn = db.get_db()
@@ -48,11 +53,13 @@ def dashboard():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    egresos = _egresos_pares(conn)
+    cuota_fija, sueldo = db.get_config_egresos(conn)
     conn.close()
 
     ahora = datetime.now()
     hoy = ahora.date()
-    summaries = simulate(aportes, hoy, wallets)
+    summaries = simulate(aportes, egresos, hoy, wallets, cuota_fija=cuota_fija, sueldo=sueldo)
     summary = summaries[-1] if summaries else None
 
     proxima_info = None
@@ -88,6 +95,12 @@ def dashboard():
     )
     ventaja_rulo = capital_hoy - mejor_quieto
 
+    total_aportado = principal_total
+    total_egresos = sum(s.egreso_pagado for s in summaries)
+
+    vencimiento = proximo_vencimiento_impuestos(hoy)
+    dias_para_vencimiento = (vencimiento - hoy).days
+
     return render_template(
         "dashboard.html",
         summary=summary,
@@ -98,6 +111,10 @@ def dashboard():
         ganancia_neta=ganancia_neta,
         tea_lograda=tea_lograda,
         ventaja_rulo=ventaja_rulo,
+        total_aportado=total_aportado,
+        total_egresos=total_egresos,
+        vencimiento=vencimiento,
+        dias_para_vencimiento=dias_para_vencimiento,
     )
 
 
@@ -130,8 +147,34 @@ def configuracion():
 
     aportes = db.get_aportes(conn)
     wallets = db.get_wallets(conn)
+    impuestos = db.get_impuestos(conn)
+    cuota_fija, sueldo = db.get_config_egresos(conn)
     conn.close()
-    return render_template("configuracion.html", aportes=aportes, wallets=wallets)
+    return render_template(
+        "configuracion.html",
+        aportes=aportes,
+        wallets=wallets,
+        impuestos=impuestos,
+        cuota_fija=cuota_fija,
+        sueldo=sueldo,
+    )
+
+
+@bp.route("/configuracion/egresos-fijos", methods=["POST"])
+def actualizar_egresos_fijos():
+    conn = db.get_db()
+    try:
+        cuota_fija = float(request.form.get("cuota_fija") or 0)
+        sueldo = float(request.form.get("sueldo") or 0)
+    except ValueError:
+        conn.close()
+        flash("Datos inválidos: revisá la cuota fija y el sueldo.")
+        return redirect(url_for("main.configuracion"))
+
+    db.set_config_egresos(conn, cuota_fija, sueldo)
+    conn.close()
+    flash("Cuota fija y sueldo actualizados.")
+    return redirect(url_for("main.configuracion"))
 
 
 @bp.route("/configuracion/eliminar/<int:aporte_id>", methods=["POST"])
@@ -140,6 +183,37 @@ def eliminar_aporte(aporte_id):
     db.delete_aporte(conn, aporte_id)
     conn.close()
     flash("Aporte eliminado.")
+    return redirect(url_for("main.configuracion"))
+
+
+@bp.route("/configuracion/impuesto", methods=["POST"])
+def agregar_impuesto():
+    conn = db.get_db()
+    try:
+        monto = float(request.form["monto"])
+        fecha = date.fromisoformat(request.form["fecha"])
+    except (KeyError, ValueError):
+        conn.close()
+        flash("Datos inválidos: revisá el monto y la fecha del impuesto.")
+        return redirect(url_for("main.configuracion"))
+
+    if monto <= 0:
+        conn.close()
+        flash("El impuesto debe ser mayor a cero.")
+        return redirect(url_for("main.configuracion"))
+
+    db.add_impuesto(conn, fecha, monto)
+    conn.close()
+    flash("Impuesto agregado.")
+    return redirect(url_for("main.configuracion"))
+
+
+@bp.route("/configuracion/impuesto/eliminar/<int:impuesto_id>", methods=["POST"])
+def eliminar_impuesto(impuesto_id):
+    conn = db.get_db()
+    db.delete_impuesto(conn, impuesto_id)
+    conn.close()
+    flash("Impuesto eliminado.")
     return redirect(url_for("main.configuracion"))
 
 
@@ -152,9 +226,13 @@ def historial():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    egresos = _egresos_pares(conn)
+    cuota_fija, sueldo = db.get_config_egresos(conn)
     conn.close()
 
-    summaries = simulate(aportes, date.today(), wallets)
+    summaries = simulate(
+        aportes, egresos, date.today(), wallets, cuota_fija=cuota_fija, sueldo=sueldo
+    )
     capital_series = [
         {"date": s.date.isoformat(), "capital_cierre": s.capital_cierre} for s in summaries
     ]
@@ -172,9 +250,13 @@ def exportar_historial():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    egresos = _egresos_pares(conn)
+    cuota_fija, sueldo = db.get_config_egresos(conn)
     conn.close()
 
-    summaries = simulate(aportes, date.today(), wallets)
+    summaries = simulate(
+        aportes, egresos, date.today(), wallets, cuota_fija=cuota_fija, sueldo=sueldo
+    )
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -233,9 +315,13 @@ def graficos():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    egresos = _egresos_pares(conn)
+    cuota_fija, sueldo = db.get_config_egresos(conn)
     conn.close()
 
-    summaries = simulate(aportes, date.today(), wallets)
+    summaries = simulate(
+        aportes, egresos, date.today(), wallets, cuota_fija=cuota_fija, sueldo=sueldo
+    )
 
     # Serie de capital + desglose aportado vs. ganancia generada, para el
     # área apilada "aportes vs. ganancia".
@@ -303,6 +389,8 @@ def proyeccion():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    egresos = _egresos_pares(conn)
+    cuota_fija, sueldo = db.get_config_egresos(conn)
     conn.close()
 
     hoy = date.today()
@@ -342,7 +430,14 @@ def proyeccion():
         fecha_objetivo = default_objetivo
 
     principal_total = sum(monto for _, monto in aportes)
-    summaries = simulate(aportes + aportes_planeados, fecha_objetivo, wallets)
+    summaries = simulate(
+        aportes + aportes_planeados,
+        egresos,
+        fecha_objetivo,
+        wallets,
+        cuota_fija=cuota_fija,
+        sueldo=sueldo,
+    )
     capital_hoy = next((s.capital_cierre for s in summaries if s.date == hoy), principal_total)
     capital_final = summaries[-1].capital_cierre if summaries else principal_total
 
