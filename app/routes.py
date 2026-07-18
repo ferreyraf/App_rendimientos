@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
@@ -16,6 +16,7 @@ def _wallet_from_row(row):
         payout_time=row["payout_time"],
         active_weekdays=tuple(int(x) for x in row["active_weekdays"].split(",")),
         default_tna=row["tna"],
+        bundles_weekend_payout=bool(row["bundles_weekend_payout"]),
     )
 
 
@@ -140,4 +141,51 @@ def graficos():
         "graficos.html",
         capital_series=capital_series,
         rendimiento_por_billetera=rendimiento_por_billetera,
+    )
+
+
+@bp.route("/proyeccion", methods=["GET", "POST"])
+def proyeccion():
+    conn = db.get_db()
+    config = db.get_config(conn)
+    if config is None:
+        conn.close()
+        return redirect(url_for("main.configuracion"))
+
+    principal, start_date = config
+    wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    conn.close()
+
+    hoy = date.today()
+    default_objetivo = hoy + timedelta(days=30)
+
+    if request.method == "POST":
+        try:
+            fecha_objetivo = date.fromisoformat(request.form["fecha_objetivo"])
+        except (KeyError, ValueError):
+            flash("Fecha inválida.")
+            return redirect(url_for("main.proyeccion"))
+        if fecha_objetivo <= hoy:
+            flash("La fecha objetivo debe ser posterior a hoy.")
+            return redirect(url_for("main.proyeccion"))
+    else:
+        fecha_objetivo = default_objetivo
+
+    summaries = simulate(start_date, fecha_objetivo, principal, wallets)
+    capital_hoy = next((s.capital_cierre for s in summaries if s.date == hoy), principal)
+    capital_final = summaries[-1].capital_cierre if summaries else principal
+
+    capital_series = [
+        {"date": s.date.isoformat(), "capital_cierre": s.capital_cierre, "futuro": s.date > hoy}
+        for s in summaries
+    ]
+
+    return render_template(
+        "proyeccion.html",
+        fecha_objetivo=fecha_objetivo,
+        hoy=hoy,
+        capital_hoy=capital_hoy,
+        capital_final=capital_final,
+        rendimiento_proyectado=capital_final - capital_hoy,
+        capital_series=capital_series,
     )

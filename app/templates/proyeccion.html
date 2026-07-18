@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Proyección a futuro</h1>
+<p class="subtitle">Estima el capital del rulo a una fecha futura, asumiendo que las tasas y horarios actuales se mantienen</p>
+
+<form method="post" class="config-form">
+  <label for="fecha_objetivo">Fecha objetivo</label>
+  <input type="date" id="fecha_objetivo" name="fecha_objetivo" value="{{ fecha_objetivo.isoformat() }}" required>
+  <button type="submit">Proyectar</button>
+</form>
+
+<p class="total">Capital hoy ({{ hoy.strftime("%d/%m/%Y") }}): <strong>${{ "%.2f"|format(capital_hoy) }}</strong></p>
+<p class="total">Capital proyectado al {{ fecha_objetivo.strftime("%d/%m/%Y") }}: <strong>${{ "%.2f"|format(capital_final) }}</strong></p>
+<p class="total">Rendimiento proyectado en el período: <strong>${{ "%.2f"|format(rendimiento_proyectado) }}</strong></p>
+
+<section class="chart-card">
+  <h2>Evolución del capital (real + proyectado)</h2>
+  <canvas id="proyeccionChart" height="120" role="img" aria-label="Capital real hasta hoy y proyectado hacia la fecha objetivo"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Fecha</th><th>Capital de cierre</th><th></th></tr></thead>
+      <tbody>
+        {% for point in capital_series %}
+          <tr>
+            <td>{{ point.date }}</td>
+            <td>${{ "%.2f"|format(point.capital_cierre) }}</td>
+            <td>{% if point.futuro %}<span class="badge">proyectado</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  const ink = '#6b7280';
+  const grid = '#e5e7eb';
+  const seriesBlue = '#2563eb';
+  const seriesGray = '#9ca3af';
+
+  const capitalSeries = {{ capital_series | tojson }};
+  const labels = capitalSeries.map(p => p.date);
+
+  // Serie "real": valores hasta hoy, null después (para que la línea corte ahí).
+  // Serie "proyectado": null hasta hoy, valores desde ahí (con el punto de hoy
+  // repetido para que ambas líneas conecten visualmente).
+  const real = [];
+  const proyectado = [];
+  capitalSeries.forEach((p, i) => {
+    if (!p.futuro) {
+      real.push(p.capital_cierre);
+      proyectado.push(i === capitalSeries.length - 1 || capitalSeries[i + 1].futuro ? p.capital_cierre : null);
+    } else {
+      real.push(null);
+      proyectado.push(p.capital_cierre);
+    }
+  });
+
+  new Chart(document.getElementById('proyeccionChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Capital real',
+          data: real,
+          borderColor: seriesBlue,
+          backgroundColor: seriesBlue,
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.15,
+        },
+        {
+          label: 'Capital proyectado',
+          data: proyectado,
+          borderColor: seriesGray,
+          backgroundColor: seriesGray,
+          borderWidth: 2,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          tension: 0.15,
+        },
+      ],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink, maxTicksLimit: 10 }, grid: { color: grid } },
+        y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { labels: { color: ink } },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      interaction: { mode: 'index', intersect: false },
+    },
+  });
+</script>
+{% endblock %}

@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS wallets (
     capture_time TEXT NOT NULL,
     payout_time TEXT NOT NULL,
     active_weekdays TEXT NOT NULL,
-    tna REAL NOT NULL
+    tna REAL NOT NULL,
+    bundles_weekend_payout INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS rulo_config (
@@ -45,8 +46,9 @@ def _seed_wallets(conn):
         return
     for w in DEFAULT_WALLETS:
         conn.execute(
-            "INSERT INTO wallets (id, name, capture_time, payout_time, active_weekdays, tna) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO wallets "
+            "(id, name, capture_time, payout_time, active_weekdays, tna, bundles_weekend_payout) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 w.id,
                 w.name,
@@ -54,6 +56,7 @@ def _seed_wallets(conn):
                 w.payout_time,
                 ",".join(map(str, w.active_weekdays)),
                 w.default_tna,
+                int(w.bundles_weekend_payout),
             ),
         )
 

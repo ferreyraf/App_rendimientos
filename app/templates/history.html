@@ -20,7 +20,10 @@
         <td>{{ c.timestamp.strftime("%H:%M") }}</td>
         <td>{{ c.wallet_name }}</td>
         <td>${{ "%.2f"|format(c.monto_capturado) }}</td>
-        <td>${{ "%.2f"|format(c.rendimiento) }}</td>
+        <td>
+          ${{ "%.2f"|format(c.rendimiento) }}
+          {% if c.dias_acumulados > 1 %}<span class="badge">×{{ c.dias_acumulados }} días</span>{% endif %}
+        </td>
       </tr>
     {% else %}
       <tr><td colspan="4">Sin capturas.</td></tr>
