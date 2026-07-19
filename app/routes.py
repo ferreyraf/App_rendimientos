@@ -176,12 +176,14 @@ def configuracion():
     egresos = db.get_egresos(conn)
     ingresos = db.get_ingresos(conn)
     conn.close()
+    total_egresos = sum(m.monto for _, m in egresos)
     return render_template(
         "configuracion.html",
         aportes=aportes,
         wallets=wallets,
         egresos=egresos,
         ingresos=ingresos,
+        total_egresos=total_egresos,
     )
 
 
