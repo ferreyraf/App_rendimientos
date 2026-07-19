@@ -36,9 +36,8 @@ DEFAULT_WALLETS = [
     Wallet(
         "nx", "Nx", "22:00", "08:00", WEEKEND, 18.0, bundles_weekend_payout=False,
         monto_maximo=1_000_000,
-        reparto_socio_id="personal_pay", reparto_umbral=1_000_000, reparto_hora="09:00",
     ),
-    Wallet("personal_pay", "Personal Pay", "22:00", "08:00", WEEKEND, 17.8, bundles_weekend_payout=False),
+    Wallet("personal_pay", "Personal Pay", "22:00", "08:00", WEEKDAYS, 17.8, bundles_weekend_payout=True),
 ]
 
 
@@ -67,9 +66,16 @@ class CaptureEvent:
 class MovimientoRecurrente:
     """Definición de un egreso o ingreso etiquetado, cargada por el usuario.
 
-    Si `recurrente` es True, se aplica todos los meses en `dia_mes` (1-31;
-    si el mes no tiene ese día, se aplica el último día del mes). Si es
-    False, es puntual y se aplica una única vez en `fecha`.
+    Si `recurrente` es True, se aplica todos los meses en `dia_mes`. Por
+    default `dia_mes` es un día calendario (1-31; si el mes no lo tiene, se
+    aplica el último día del mes). Si `dia_habil` es True, en cambio,
+    `dia_mes` cuenta días hábiles (lunes a viernes) desde el 1ro del mes —
+    útil para sueldos que se acreditan, por ejemplo, el "5to día hábil".
+
+    Si `recurrente` es False, es puntual y se aplica una única vez en `fecha`.
+
+    `categoria` es una clasificación libre y opcional (ej. "Vivienda",
+    "Servicios") usada solo para agrupar en reportes — no afecta el cálculo.
     """
 
     etiqueta: str
@@ -77,12 +83,15 @@ class MovimientoRecurrente:
     recurrente: bool
     fecha: date | None = None
     dia_mes: int | None = None
+    dia_habil: bool = False
+    categoria: str = ""
 
 
 @dataclass
 class Movimiento:
     etiqueta: str
     monto: float
+    categoria: str = ""
 
 
 @dataclass
@@ -122,19 +131,51 @@ class _Evento:
     umbral: float = 0.0  # solo "split"
 
 
-def _fechas_recurrentes(dia_mes: int, start: date, end: date) -> list[date]:
+def _n_esimo_dia_habil(anio: int, mes: int, n: int) -> date:
+    """El n-ésimo día hábil (lunes a viernes) del mes."""
+    dia, habiles = date(anio, mes, 1), 0
+    while True:
+        if dia.weekday() in WEEKDAYS:
+            habiles += 1
+            if habiles == n:
+                return dia
+        dia += timedelta(days=1)
+
+
+def _fechas_recurrentes(dia_mes: int, dia_habil: bool, start: date, end: date) -> list[date]:
     """Fechas concretas (una por mes) en que cae un `dia_mes` recurrente
-    entre `start` y `end` (inclusive). Si un mes no tiene ese día (ej. 31 en
-    febrero), usa el último día de ese mes."""
+    entre `start` y `end` (inclusive). Si `dia_habil` es False (día
+    calendario) y el mes no tiene ese día (ej. 31 en febrero), usa el
+    último día de ese mes. Si `dia_habil` es True, `dia_mes` cuenta días
+    hábiles desde el 1ro del mes (ej. 5 = 5to día hábil)."""
     fechas = []
     anio, mes = start.year, start.month
     while date(anio, mes, 1) <= end:
-        ultimo_dia = calendar.monthrange(anio, mes)[1]
-        fecha_evento = date(anio, mes, min(dia_mes, ultimo_dia))
+        if dia_habil:
+            fecha_evento = _n_esimo_dia_habil(anio, mes, dia_mes)
+        else:
+            ultimo_dia = calendar.monthrange(anio, mes)[1]
+            fecha_evento = date(anio, mes, min(dia_mes, ultimo_dia))
         if start <= fecha_evento <= end:
             fechas.append(fecha_evento)
         anio, mes = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
     return fechas
+
+
+def movimientos_del_mes(items: list[MovimientoRecurrente], anio: int, mes: int) -> list[Movimiento]:
+    """Los egresos/ingresos (recurrentes resueltos a la fecha que les toca
+    ese mes, más los puntuales que caen en el mes) — para reportes tipo
+    "mes actual", no para la simulación día a día del rulo."""
+    primer_dia = date(anio, mes, 1)
+    ultimo_dia = date(anio, mes, calendar.monthrange(anio, mes)[1])
+    resultado = []
+    for item in items:
+        if item.recurrente:
+            ocurrencias = _fechas_recurrentes(item.dia_mes, item.dia_habil, primer_dia, ultimo_dia)
+            resultado += [Movimiento(item.etiqueta, item.monto, item.categoria) for _ in ocurrencias]
+        elif item.fecha is not None and primer_dia <= item.fecha <= ultimo_dia:
+            resultado.append(Movimiento(item.etiqueta, item.monto, item.categoria))
+    return resultado
 
 
 def simulate(
@@ -173,7 +214,7 @@ def simulate(
         eventos = []
         for item in items:
             fechas = (
-                _fechas_recurrentes(item.dia_mes, start_date, end_date)
+                _fechas_recurrentes(item.dia_mes, item.dia_habil, start_date, end_date)
                 if item.recurrente
                 else ([item.fecha] if start_date <= item.fecha <= end_date else [])
             )

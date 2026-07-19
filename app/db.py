@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS egresos (
     monto REAL NOT NULL,
     recurrente INTEGER NOT NULL DEFAULT 0,
     fecha TEXT,
-    dia_mes INTEGER
+    dia_mes INTEGER,
+    dia_habil INTEGER NOT NULL DEFAULT 0,
+    categoria TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS ingresos (
@@ -44,7 +46,15 @@ CREATE TABLE IF NOT EXISTS ingresos (
     monto REAL NOT NULL,
     recurrente INTEGER NOT NULL DEFAULT 0,
     fecha TEXT,
-    dia_mes INTEGER
+    dia_mes INTEGER,
+    dia_habil INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS inversiones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    etiqueta TEXT NOT NULL,
+    monto REAL NOT NULL,
+    tna REAL NOT NULL DEFAULT 0
 );
 """
 
@@ -62,8 +72,50 @@ def init_db():
     conn.executescript(SCHEMA)
     _seed_wallets(conn)
     _migrate_legacy_egresos(conn)
+    _migrate_dia_habil(conn)
+    _migrate_categoria(conn)
+    _migrate_personal_pay_weekday(conn)
     conn.commit()
     conn.close()
+
+
+def _migrate_personal_pay_weekday(conn):
+    """Personal Pay opera de lunes a viernes, no fin de semana: corrige la
+    configuración inicial (que la trataba como socia de fin de semana de
+    Nx) sin pisar cambios manuales ya hechos desde 'Actualizar billetera'.
+    No-op si ya fue migrada."""
+    personal_pay = conn.execute(
+        "SELECT active_weekdays FROM wallets WHERE id = 'personal_pay'"
+    ).fetchone()
+    if personal_pay is not None and personal_pay["active_weekdays"] == "5,6":
+        conn.execute(
+            "UPDATE wallets SET active_weekdays = '0,1,2,3,4', bundles_weekend_payout = 1 "
+            "WHERE id = 'personal_pay'"
+        )
+
+    nx = conn.execute("SELECT reparto_socio_id FROM wallets WHERE id = 'nx'").fetchone()
+    if nx is not None and nx["reparto_socio_id"] == "personal_pay":
+        conn.execute(
+            "UPDATE wallets SET reparto_socio_id = NULL, reparto_umbral = NULL, "
+            "reparto_hora = NULL WHERE id = 'nx'"
+        )
+
+
+def _migrate_dia_habil(conn):
+    """Agrega la columna `dia_habil` a egresos/ingresos si la tabla ya
+    existía de una versión anterior del esquema (CREATE TABLE IF NOT EXISTS
+    no altera tablas existentes)."""
+    for tabla in ("egresos", "ingresos"):
+        columnas = {r["name"] for r in conn.execute(f"PRAGMA table_info({tabla})")}
+        if "dia_habil" not in columnas:
+            conn.execute(f"ALTER TABLE {tabla} ADD COLUMN dia_habil INTEGER NOT NULL DEFAULT 0")
+
+
+def _migrate_categoria(conn):
+    """Agrega la columna `categoria` a egresos si la tabla ya existía."""
+    columnas = {r["name"] for r in conn.execute("PRAGMA table_info(egresos)")}
+    if "categoria" not in columnas:
+        conn.execute("ALTER TABLE egresos ADD COLUMN categoria TEXT NOT NULL DEFAULT ''")
 
 
 def _migrate_legacy_egresos(conn):
@@ -177,6 +229,8 @@ def _row_to_movimiento(row) -> MovimientoRecurrente:
         recurrente=bool(row["recurrente"]),
         fecha=date.fromisoformat(row["fecha"]) if row["fecha"] else None,
         dia_mes=row["dia_mes"],
+        dia_habil=bool(row["dia_habil"]),
+        categoria=row["categoria"] if "categoria" in row.keys() else "",
     )
 
 
@@ -187,24 +241,35 @@ def _get_movimientos(conn, tabla):
     return [(row["id"], _row_to_movimiento(row)) for row in rows]
 
 
-def _add_movimiento(conn, tabla, etiqueta, monto, recurrente, fecha, dia_mes):
+def _add_movimiento(conn, tabla, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil):
     conn.execute(
-        f"INSERT INTO {tabla} (etiqueta, monto, recurrente, fecha, dia_mes) VALUES (?, ?, ?, ?, ?)",
-        (etiqueta, monto, int(recurrente), fecha.isoformat() if fecha else None, dia_mes),
-    )
-    conn.commit()
-
-
-def _update_movimiento(conn, tabla, movimiento_id, etiqueta, monto, recurrente, fecha, dia_mes):
-    conn.execute(
-        f"UPDATE {tabla} SET etiqueta = ?, monto = ?, recurrente = ?, fecha = ?, dia_mes = ? "
-        "WHERE id = ?",
+        f"INSERT INTO {tabla} (etiqueta, monto, recurrente, fecha, dia_mes, dia_habil) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         (
             etiqueta,
             monto,
             int(recurrente),
             fecha.isoformat() if fecha else None,
             dia_mes,
+            int(dia_habil),
+        ),
+    )
+    conn.commit()
+
+
+def _update_movimiento(
+    conn, tabla, movimiento_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil
+):
+    conn.execute(
+        f"UPDATE {tabla} SET etiqueta = ?, monto = ?, recurrente = ?, fecha = ?, dia_mes = ?, "
+        "dia_habil = ? WHERE id = ?",
+        (
+            etiqueta,
+            monto,
+            int(recurrente),
+            fecha.isoformat() if fecha else None,
+            dia_mes,
+            int(dia_habil),
             movimiento_id,
         ),
     )
@@ -220,12 +285,39 @@ def get_egresos(conn):
     return _get_movimientos(conn, "egresos")
 
 
-def add_egreso(conn, etiqueta, monto, recurrente, fecha, dia_mes):
-    _add_movimiento(conn, "egresos", etiqueta, monto, recurrente, fecha, dia_mes)
+def add_egreso(conn, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria):
+    conn.execute(
+        "INSERT INTO egresos (etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            etiqueta,
+            monto,
+            int(recurrente),
+            fecha.isoformat() if fecha else None,
+            dia_mes,
+            int(dia_habil),
+            categoria,
+        ),
+    )
+    conn.commit()
 
 
-def update_egreso(conn, egreso_id, etiqueta, monto, recurrente, fecha, dia_mes):
-    _update_movimiento(conn, "egresos", egreso_id, etiqueta, monto, recurrente, fecha, dia_mes)
+def update_egreso(conn, egreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria):
+    conn.execute(
+        "UPDATE egresos SET etiqueta = ?, monto = ?, recurrente = ?, fecha = ?, dia_mes = ?, "
+        "dia_habil = ?, categoria = ? WHERE id = ?",
+        (
+            etiqueta,
+            monto,
+            int(recurrente),
+            fecha.isoformat() if fecha else None,
+            dia_mes,
+            int(dia_habil),
+            categoria,
+            egreso_id,
+        ),
+    )
+    conn.commit()
 
 
 def delete_egreso(conn, egreso_id):
@@ -236,13 +328,40 @@ def get_ingresos(conn):
     return _get_movimientos(conn, "ingresos")
 
 
-def add_ingreso(conn, etiqueta, monto, recurrente, fecha, dia_mes):
-    _add_movimiento(conn, "ingresos", etiqueta, monto, recurrente, fecha, dia_mes)
+def add_ingreso(conn, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil):
+    _add_movimiento(conn, "ingresos", etiqueta, monto, recurrente, fecha, dia_mes, dia_habil)
 
 
-def update_ingreso(conn, ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes):
-    _update_movimiento(conn, "ingresos", ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes)
+def update_ingreso(conn, ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil):
+    _update_movimiento(
+        conn, "ingresos", ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil
+    )
 
 
 def delete_ingreso(conn, ingreso_id):
     _delete_movimiento(conn, "ingresos", ingreso_id)
+
+
+def get_inversiones(conn):
+    rows = conn.execute("SELECT id, etiqueta, monto, tna FROM inversiones ORDER BY id").fetchall()
+    return [(row["id"], row["etiqueta"], row["monto"], row["tna"]) for row in rows]
+
+
+def add_inversion(conn, etiqueta, monto, tna):
+    conn.execute(
+        "INSERT INTO inversiones (etiqueta, monto, tna) VALUES (?, ?, ?)", (etiqueta, monto, tna)
+    )
+    conn.commit()
+
+
+def update_inversion(conn, inversion_id, etiqueta, monto, tna):
+    conn.execute(
+        "UPDATE inversiones SET etiqueta = ?, monto = ?, tna = ? WHERE id = ?",
+        (etiqueta, monto, tna, inversion_id),
+    )
+    conn.commit()
+
+
+def delete_inversion(conn, inversion_id):
+    conn.execute("DELETE FROM inversiones WHERE id = ?", (inversion_id,))
+    conn.commit()

@@ -5,6 +5,10 @@
 
 <div class="kpi-row">
   <div class="stat-tile">
+    <p class="stat-label">Patrimonio total (rulo + <a href="{{ url_for('main.patrimonio') }}">inversiones</a>)</p>
+    <p class="stat-value">${{ "%.2f"|format(patrimonio_total) }}</p>
+  </div>
+  <div class="stat-tile">
     <p class="stat-label">Ganancia neta acumulada</p>
     <p class="stat-value {{ 'positivo' if ganancia_neta >= 0 else 'negativo' }}">${{ "%.2f"|format(ganancia_neta) }}</p>
   </div>
@@ -37,6 +41,43 @@
     — faltan <strong>{{ dias_para_vencimiento }} día(s)</strong>
   </p>
 </section>
+
+<div class="two-col">
+  <section class="chart-card">
+    <h2>Ingresos vs. egresos (mes actual)</h2>
+    <canvas id="ingresosEgresosChart" height="160" role="img" aria-label="Ingresos vs. egresos del mes actual"></canvas>
+    <details>
+      <summary class="subtitle">Ver como tabla</summary>
+      <table>
+        <thead><tr><th></th><th>Monto</th></tr></thead>
+        <tbody>
+          <tr><td>Ingresos</td><td>${{ "%.2f"|format(total_ingresos_mes) }}</td></tr>
+          <tr><td>Egresos</td><td>${{ "%.2f"|format(total_egresos_mes) }}</td></tr>
+        </tbody>
+      </table>
+    </details>
+  </section>
+
+  <section class="chart-card">
+    <h2>Egresos por categoría (mes actual)</h2>
+    {% if egresos_por_categoria %}
+    <canvas id="categoriasChart" height="160" role="img" aria-label="Egresos del mes actual agrupados por categoría"></canvas>
+    <details>
+      <summary class="subtitle">Ver como tabla</summary>
+      <table>
+        <thead><tr><th>Categoría</th><th>Monto</th></tr></thead>
+        <tbody>
+          {% for item in egresos_por_categoria %}
+            <tr><td>{{ item.categoria }}</td><td>${{ "%.2f"|format(item.monto) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% else %}
+    <p class="subtitle">No hay egresos cargados para este mes.</p>
+    {% endif %}
+  </section>
+</div>
 
 {% if actual or proxima %}
 <div class="two-col">
@@ -108,4 +149,43 @@
 {% else %}
 <p class="subtitle">Todavía no hay datos para hoy.</p>
 {% endif %}
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+  const ink = token('--text-secondary');
+  const categorical = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--series-${n}`));
+
+  new Chart(document.getElementById('ingresosEgresosChart'), {
+    type: 'pie',
+    data: {
+      labels: ['Ingresos', 'Egresos'],
+      datasets: [{
+        data: [{{ total_ingresos_mes }}, {{ total_egresos_mes }}],
+        backgroundColor: [token('--series-2'), token('--series-8')],
+      }],
+    },
+    options: {
+      plugins: { legend: { labels: { color: ink } } },
+    },
+  });
+
+  {% if egresos_por_categoria %}
+  const categoriasData = {{ egresos_por_categoria | tojson }};
+  new Chart(document.getElementById('categoriasChart'), {
+    type: 'pie',
+    data: {
+      labels: categoriasData.map((c) => c.categoria),
+      datasets: [{
+        data: categoriasData.map((c) => c.monto),
+        backgroundColor: categoriasData.map((_, i) => categorical[i % categorical.length]),
+      }],
+    },
+    options: {
+      plugins: { legend: { labels: { color: ink } } },
+    },
+  });
+  {% endif %}
+</script>
 {% endblock %}

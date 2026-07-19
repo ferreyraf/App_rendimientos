@@ -56,6 +56,7 @@
       <thead>
         <tr>
           <th>Etiqueta</th>
+          <th>Categoría</th>
           <th>Monto</th>
           <th>Recurrente</th>
           <th>Fecha / día del mes</th>
@@ -66,6 +67,7 @@
         {% for id, m in egresos %}
           <tr>
             <td><input type="text" form="egreso-{{ id }}" name="etiqueta" value="{{ m.etiqueta }}" required></td>
+            <td><input type="text" form="egreso-{{ id }}" name="categoria" list="categorias-existentes" value="{{ m.categoria }}" placeholder="Sin categoría"></td>
             <td><input type="number" step="0.01" min="0.01" form="egreso-{{ id }}" name="monto" value="{{ m.monto }}" required></td>
             <td>
               <label><input type="checkbox" form="egreso-{{ id }}" name="recurrente" onchange="toggleRecurrente(this)" {{ "checked" if m.recurrente }}> mensual</label>
@@ -73,6 +75,7 @@
             <td>
               <input type="date" form="egreso-{{ id }}" name="fecha" class="fecha-field" value="{{ m.fecha.isoformat() if m.fecha else '' }}" {{ "hidden" if m.recurrente }}>
               <input type="number" form="egreso-{{ id }}" name="dia_mes" class="dia-mes-field" min="1" max="31" placeholder="Día (1-31)" value="{{ m.dia_mes or '' }}" {{ "hidden" if not m.recurrente }}>
+              <label class="dia-mes-field" {{ "hidden" if not m.recurrente }}><input type="checkbox" form="egreso-{{ id }}" name="dia_habil" {{ "checked" if m.dia_habil }}> hábil</label>
             </td>
             <td>
               <button type="submit" form="egreso-{{ id }}" formaction="{{ url_for('main.editar_egreso', egreso_id=id) }}">Guardar</button>
@@ -81,10 +84,13 @@
           </tr>
           <form id="egreso-{{ id }}" method="post"></form>
         {% else %}
-          <tr><td colspan="5">Todavía no cargaste ningún egreso.</td></tr>
+          <tr><td colspan="6">Todavía no cargaste ningún egreso.</td></tr>
         {% endfor %}
       </tbody>
     </table>
+    <datalist id="categorias-existentes">
+      {% for cat in categorias_existentes %}<option value="{{ cat }}">{% endfor %}
+    </datalist>
     <p class="total">Total egresos: <strong>${{ "%.2f"|format(total_egresos) }}</strong></p>
   </section>
 
@@ -94,6 +100,9 @@
       <label for="egreso_etiqueta">Etiqueta</label>
       <input type="text" id="egreso_etiqueta" name="etiqueta" placeholder="Ej. Alquiler, Tarjeta, Impuesto" required>
 
+      <label for="egreso_categoria">Categoría (para el gráfico del dashboard)</label>
+      <input type="text" id="egreso_categoria" name="categoria" list="categorias-existentes" placeholder="Ej. Vivienda, Servicios, Transporte">
+
       <label for="egreso_monto">Monto</label>
       <input type="number" step="0.01" min="0.01" id="egreso_monto" name="monto" required>
 
@@ -102,8 +111,10 @@
       <label for="egreso_fecha" class="fecha-field">Fecha</label>
       <input type="date" id="egreso_fecha" name="fecha" class="fecha-field">
 
-      <label for="egreso_dia_mes" class="dia-mes-field" hidden>Día del mes (1-31)</label>
+      <label for="egreso_dia_mes" class="dia-mes-field" hidden>Día del mes (o día hábil, ver abajo)</label>
       <input type="number" id="egreso_dia_mes" name="dia_mes" class="dia-mes-field" min="1" max="31" hidden>
+
+      <label class="dia-mes-field" hidden><input type="checkbox" name="dia_habil"> Es día hábil (salta fines de semana), no día calendario</label>
 
       <button type="submit">Agregar</button>
     </form>
@@ -136,6 +147,7 @@
             <td>
               <input type="date" form="ingreso-{{ id }}" name="fecha" class="fecha-field" value="{{ m.fecha.isoformat() if m.fecha else '' }}" {{ "hidden" if m.recurrente }}>
               <input type="number" form="ingreso-{{ id }}" name="dia_mes" class="dia-mes-field" min="1" max="31" placeholder="Día (1-31)" value="{{ m.dia_mes or '' }}" {{ "hidden" if not m.recurrente }}>
+              <label class="dia-mes-field" {{ "hidden" if not m.recurrente }}><input type="checkbox" form="ingreso-{{ id }}" name="dia_habil" {{ "checked" if m.dia_habil }}> hábil</label>
             </td>
             <td>
               <button type="submit" form="ingreso-{{ id }}" formaction="{{ url_for('main.editar_ingreso', ingreso_id=id) }}">Guardar</button>
@@ -148,6 +160,7 @@
         {% endfor %}
       </tbody>
     </table>
+    <p class="total">Total ingresos: <strong>${{ "%.2f"|format(total_ingresos) }}</strong></p>
   </section>
 
   <section class="chart-card">
@@ -164,8 +177,10 @@
       <label for="ingreso_fecha" class="fecha-field">Fecha</label>
       <input type="date" id="ingreso_fecha" name="fecha" class="fecha-field">
 
-      <label for="ingreso_dia_mes" class="dia-mes-field" hidden>Día del mes (1-31)</label>
+      <label for="ingreso_dia_mes" class="dia-mes-field" hidden>Día del mes (o día hábil, ver abajo)</label>
       <input type="number" id="ingreso_dia_mes" name="dia_mes" class="dia-mes-field" min="1" max="31" hidden>
+
+      <label class="dia-mes-field" hidden><input type="checkbox" name="dia_habil"> Es día hábil (salta fines de semana), no día calendario</label>
 
       <button type="submit">Agregar</button>
     </form>

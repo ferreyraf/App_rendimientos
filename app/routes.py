@@ -10,6 +10,8 @@ from .domain import (
     Wallet,
     billetera_actual,
     capital_simple,
+    daily_yield,
+    movimientos_del_mes,
     proxima_captura,
     proximo_vencimiento_impuestos,
     simulate,
@@ -49,23 +51,44 @@ def _ingresos(conn) -> list[MovimientoRecurrente]:
     return [m for _, m in db.get_ingresos(conn)]
 
 
-def _parse_movimiento_form(form) -> tuple[str, float, bool, date | None, int | None]:
+def _total_invertido(conn) -> float:
+    return sum(monto for _, _, monto, _ in db.get_inversiones(conn))
+
+
+def _parse_inversion_form(form) -> tuple[str, float, float]:
     etiqueta = (form.get("etiqueta") or "").strip()
     if not etiqueta:
         raise ValueError("La etiqueta es obligatoria.")
     monto = float(form["monto"])
     if monto <= 0:
         raise ValueError("El monto debe ser mayor a cero.")
+    tna = float(form.get("tna") or 0)
+    if tna < 0:
+        raise ValueError("La TNA no puede ser negativa.")
+    return etiqueta, monto, tna
+
+
+def _parse_movimiento_form(form) -> tuple[str, float, bool, date | None, int | None, bool, str]:
+    etiqueta = (form.get("etiqueta") or "").strip()
+    if not etiqueta:
+        raise ValueError("La etiqueta es obligatoria.")
+    monto = float(form["monto"])
+    if monto <= 0:
+        raise ValueError("El monto debe ser mayor a cero.")
+    categoria = (form.get("categoria") or "").strip()
     recurrente = form.get("recurrente") == "on"
     if recurrente:
         dia_mes = int(form["dia_mes"])
-        if not (1 <= dia_mes <= 31):
-            raise ValueError("El día del mes debe estar entre 1 y 31.")
+        dia_habil = form.get("dia_habil") == "on"
+        limite = 23 if dia_habil else 31
+        if not (1 <= dia_mes <= limite):
+            raise ValueError(f"El día {'hábil' if dia_habil else 'del mes'} debe estar entre 1 y {limite}.")
         fecha = None
     else:
         fecha = date.fromisoformat(form["fecha"])
         dia_mes = None
-    return etiqueta, monto, recurrente, fecha, dia_mes
+        dia_habil = False
+    return etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria
 
 
 @bp.route("/")
@@ -79,6 +102,7 @@ def dashboard():
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     egresos = _egresos(conn)
     ingresos = _ingresos(conn)
+    total_invertido = _total_invertido(conn)
     conn.close()
 
     ahora = datetime.now()
@@ -122,9 +146,23 @@ def dashboard():
     total_aportado = principal_total
     total_egresos = sum(s.egreso_pagado for s in summaries)
     total_ingresos = sum(s.ingreso_recibido for s in summaries)
+    patrimonio_total = capital_hoy + total_invertido
 
     vencimiento = proximo_vencimiento_impuestos(hoy)
     dias_para_vencimiento = (vencimiento - hoy).days
+
+    egresos_mes = movimientos_del_mes(egresos, hoy.year, hoy.month)
+    ingresos_mes = movimientos_del_mes(ingresos, hoy.year, hoy.month)
+    total_egresos_mes = sum(m.monto for m in egresos_mes)
+    total_ingresos_mes = sum(m.monto for m in ingresos_mes)
+
+    egresos_por_categoria: dict[str, float] = {}
+    for m in egresos_mes:
+        clave = m.categoria or "Sin categoría"
+        egresos_por_categoria[clave] = egresos_por_categoria.get(clave, 0.0) + m.monto
+    egresos_por_categoria_serie = [
+        {"categoria": k, "monto": v} for k, v in egresos_por_categoria.items()
+    ]
 
     return render_template(
         "dashboard.html",
@@ -139,8 +177,13 @@ def dashboard():
         total_aportado=total_aportado,
         total_egresos=total_egresos,
         total_ingresos=total_ingresos,
+        total_invertido=total_invertido,
+        patrimonio_total=patrimonio_total,
         vencimiento=vencimiento,
         dias_para_vencimiento=dias_para_vencimiento,
+        total_egresos_mes=total_egresos_mes,
+        total_ingresos_mes=total_ingresos_mes,
+        egresos_por_categoria=egresos_por_categoria_serie,
     )
 
 
@@ -177,6 +220,8 @@ def configuracion():
     ingresos = db.get_ingresos(conn)
     conn.close()
     total_egresos = sum(m.monto for _, m in egresos)
+    total_ingresos = sum(m.monto for _, m in ingresos)
+    categorias_existentes = sorted({m.categoria for _, m in egresos if m.categoria})
     return render_template(
         "configuracion.html",
         aportes=aportes,
@@ -184,6 +229,8 @@ def configuracion():
         egresos=egresos,
         ingresos=ingresos,
         total_egresos=total_egresos,
+        total_ingresos=total_ingresos,
+        categorias_existentes=categorias_existentes,
     )
 
 
@@ -226,7 +273,7 @@ def eliminar_aporte(aporte_id):
 def agregar_egreso():
     conn = db.get_db()
     try:
-        etiqueta, monto, recurrente, fecha, dia_mes = _parse_movimiento_form(request.form)
+        etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria = _parse_movimiento_form(request.form)
     except KeyError:
         conn.close()
         flash("Datos inválidos: revisá los campos del egreso.")
@@ -236,7 +283,7 @@ def agregar_egreso():
         flash(str(exc))
         return redirect(url_for("main.configuracion"))
 
-    db.add_egreso(conn, etiqueta, monto, recurrente, fecha, dia_mes)
+    db.add_egreso(conn, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria)
     conn.close()
     flash("Egreso agregado.")
     return redirect(url_for("main.configuracion"))
@@ -246,7 +293,7 @@ def agregar_egreso():
 def editar_egreso(egreso_id):
     conn = db.get_db()
     try:
-        etiqueta, monto, recurrente, fecha, dia_mes = _parse_movimiento_form(request.form)
+        etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria = _parse_movimiento_form(request.form)
     except KeyError:
         conn.close()
         flash("Datos inválidos: revisá los campos del egreso.")
@@ -256,7 +303,7 @@ def editar_egreso(egreso_id):
         flash(str(exc))
         return redirect(url_for("main.configuracion"))
 
-    db.update_egreso(conn, egreso_id, etiqueta, monto, recurrente, fecha, dia_mes)
+    db.update_egreso(conn, egreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria)
     conn.close()
     flash("Egreso actualizado.")
     return redirect(url_for("main.configuracion"))
@@ -275,7 +322,7 @@ def eliminar_egreso(egreso_id):
 def agregar_ingreso():
     conn = db.get_db()
     try:
-        etiqueta, monto, recurrente, fecha, dia_mes = _parse_movimiento_form(request.form)
+        etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, _categoria = _parse_movimiento_form(request.form)
     except KeyError:
         conn.close()
         flash("Datos inválidos: revisá los campos del ingreso.")
@@ -285,7 +332,7 @@ def agregar_ingreso():
         flash(str(exc))
         return redirect(url_for("main.configuracion"))
 
-    db.add_ingreso(conn, etiqueta, monto, recurrente, fecha, dia_mes)
+    db.add_ingreso(conn, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil)
     conn.close()
     flash("Ingreso agregado.")
     return redirect(url_for("main.configuracion"))
@@ -295,7 +342,7 @@ def agregar_ingreso():
 def editar_ingreso(ingreso_id):
     conn = db.get_db()
     try:
-        etiqueta, monto, recurrente, fecha, dia_mes = _parse_movimiento_form(request.form)
+        etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, _categoria = _parse_movimiento_form(request.form)
     except KeyError:
         conn.close()
         flash("Datos inválidos: revisá los campos del ingreso.")
@@ -305,7 +352,7 @@ def editar_ingreso(ingreso_id):
         flash(str(exc))
         return redirect(url_for("main.configuracion"))
 
-    db.update_ingreso(conn, ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes)
+    db.update_ingreso(conn, ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil)
     conn.close()
     flash("Ingreso actualizado.")
     return redirect(url_for("main.configuracion"))
@@ -548,3 +595,90 @@ def proyeccion():
         capital_series=capital_series,
         aportes_planeados=aportes_planeados,
     )
+
+
+@bp.route("/patrimonio")
+def patrimonio():
+    conn = db.get_db()
+    inversiones_rows = db.get_inversiones(conn)
+    aportes = _aportes_pares(conn)
+
+    capital_rulo = 0.0
+    if aportes:
+        wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+        egresos = _egresos(conn)
+        ingresos = _ingresos(conn)
+        summaries = simulate(aportes, egresos, ingresos, date.today(), wallets)
+        capital_rulo = summaries[-1].capital_cierre if summaries else 0.0
+    conn.close()
+
+    inversiones = [
+        {
+            "id": inversion_id,
+            "etiqueta": etiqueta,
+            "monto": monto,
+            "tna": tna,
+            "rendimiento_diario": daily_yield(monto, tna),
+        }
+        for inversion_id, etiqueta, monto, tna in inversiones_rows
+    ]
+    total_invertido = sum(inv["monto"] for inv in inversiones)
+    rendimiento_diario_estimado = sum(inv["rendimiento_diario"] for inv in inversiones)
+
+    return render_template(
+        "patrimonio.html",
+        inversiones=inversiones,
+        total_invertido=total_invertido,
+        rendimiento_diario_estimado=rendimiento_diario_estimado,
+        capital_rulo=capital_rulo,
+        patrimonio_total=capital_rulo + total_invertido,
+    )
+
+
+@bp.route("/patrimonio/agregar", methods=["POST"])
+def agregar_inversion():
+    conn = db.get_db()
+    try:
+        etiqueta, monto, tna = _parse_inversion_form(request.form)
+    except KeyError:
+        conn.close()
+        flash("Datos inválidos: revisá los campos de la inversión.")
+        return redirect(url_for("main.patrimonio"))
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc))
+        return redirect(url_for("main.patrimonio"))
+
+    db.add_inversion(conn, etiqueta, monto, tna)
+    conn.close()
+    flash("Inversión agregada.")
+    return redirect(url_for("main.patrimonio"))
+
+
+@bp.route("/patrimonio/editar/<int:inversion_id>", methods=["POST"])
+def editar_inversion(inversion_id):
+    conn = db.get_db()
+    try:
+        etiqueta, monto, tna = _parse_inversion_form(request.form)
+    except KeyError:
+        conn.close()
+        flash("Datos inválidos: revisá los campos de la inversión.")
+        return redirect(url_for("main.patrimonio"))
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc))
+        return redirect(url_for("main.patrimonio"))
+
+    db.update_inversion(conn, inversion_id, etiqueta, monto, tna)
+    conn.close()
+    flash("Inversión actualizada.")
+    return redirect(url_for("main.patrimonio"))
+
+
+@bp.route("/patrimonio/eliminar/<int:inversion_id>", methods=["POST"])
+def eliminar_inversion(inversion_id):
+    conn = db.get_db()
+    db.delete_inversion(conn, inversion_id)
+    conn.close()
+    flash("Inversión eliminada.")
+    return redirect(url_for("main.patrimonio"))
