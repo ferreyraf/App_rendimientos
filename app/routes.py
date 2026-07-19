@@ -6,6 +6,7 @@ from flask import Blueprint, Response, flash, redirect, render_template, request
 
 from . import db
 from .domain import (
+    MovimientoRecurrente,
     Wallet,
     billetera_actual,
     capital_simple,
@@ -40,8 +41,31 @@ def _aportes_pares(conn):
     return [(fecha, monto) for _, fecha, monto in db.get_aportes(conn)]
 
 
-def _egresos_pares(conn):
-    return [(fecha, monto) for _, fecha, monto in db.get_impuestos(conn)]
+def _egresos(conn) -> list[MovimientoRecurrente]:
+    return [m for _, m in db.get_egresos(conn)]
+
+
+def _ingresos(conn) -> list[MovimientoRecurrente]:
+    return [m for _, m in db.get_ingresos(conn)]
+
+
+def _parse_movimiento_form(form) -> tuple[str, float, bool, date | None, int | None]:
+    etiqueta = (form.get("etiqueta") or "").strip()
+    if not etiqueta:
+        raise ValueError("La etiqueta es obligatoria.")
+    monto = float(form["monto"])
+    if monto <= 0:
+        raise ValueError("El monto debe ser mayor a cero.")
+    recurrente = form.get("recurrente") == "on"
+    if recurrente:
+        dia_mes = int(form["dia_mes"])
+        if not (1 <= dia_mes <= 31):
+            raise ValueError("El día del mes debe estar entre 1 y 31.")
+        fecha = None
+    else:
+        fecha = date.fromisoformat(form["fecha"])
+        dia_mes = None
+    return etiqueta, monto, recurrente, fecha, dia_mes
 
 
 @bp.route("/")
@@ -53,13 +77,13 @@ def dashboard():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
-    egresos = _egresos_pares(conn)
-    cuota_fija, sueldo = db.get_config_egresos(conn)
+    egresos = _egresos(conn)
+    ingresos = _ingresos(conn)
     conn.close()
 
     ahora = datetime.now()
     hoy = ahora.date()
-    summaries = simulate(aportes, egresos, hoy, wallets, cuota_fija=cuota_fija, sueldo=sueldo)
+    summaries = simulate(aportes, egresos, ingresos, hoy, wallets)
     summary = summaries[-1] if summaries else None
 
     proxima_info = None
@@ -97,6 +121,7 @@ def dashboard():
 
     total_aportado = principal_total
     total_egresos = sum(s.egreso_pagado for s in summaries)
+    total_ingresos = sum(s.ingreso_recibido for s in summaries)
 
     vencimiento = proximo_vencimiento_impuestos(hoy)
     dias_para_vencimiento = (vencimiento - hoy).days
@@ -113,6 +138,7 @@ def dashboard():
         ventaja_rulo=ventaja_rulo,
         total_aportado=total_aportado,
         total_egresos=total_egresos,
+        total_ingresos=total_ingresos,
         vencimiento=vencimiento,
         dias_para_vencimiento=dias_para_vencimiento,
     )
@@ -147,34 +173,16 @@ def configuracion():
 
     aportes = db.get_aportes(conn)
     wallets = db.get_wallets(conn)
-    impuestos = db.get_impuestos(conn)
-    cuota_fija, sueldo = db.get_config_egresos(conn)
+    egresos = db.get_egresos(conn)
+    ingresos = db.get_ingresos(conn)
     conn.close()
     return render_template(
         "configuracion.html",
         aportes=aportes,
         wallets=wallets,
-        impuestos=impuestos,
-        cuota_fija=cuota_fija,
-        sueldo=sueldo,
+        egresos=egresos,
+        ingresos=ingresos,
     )
-
-
-@bp.route("/configuracion/egresos-fijos", methods=["POST"])
-def actualizar_egresos_fijos():
-    conn = db.get_db()
-    try:
-        cuota_fija = float(request.form.get("cuota_fija") or 0)
-        sueldo = float(request.form.get("sueldo") or 0)
-    except ValueError:
-        conn.close()
-        flash("Datos inválidos: revisá la cuota fija y el sueldo.")
-        return redirect(url_for("main.configuracion"))
-
-    db.set_config_egresos(conn, cuota_fija, sueldo)
-    conn.close()
-    flash("Cuota fija y sueldo actualizados.")
-    return redirect(url_for("main.configuracion"))
 
 
 @bp.route("/configuracion/editar/<int:aporte_id>", methods=["POST"])
@@ -212,56 +220,101 @@ def eliminar_aporte(aporte_id):
     return redirect(url_for("main.configuracion"))
 
 
-@bp.route("/configuracion/impuesto", methods=["POST"])
-def agregar_impuesto():
+@bp.route("/configuracion/egreso", methods=["POST"])
+def agregar_egreso():
     conn = db.get_db()
     try:
-        monto = float(request.form["monto"])
-        fecha = date.fromisoformat(request.form["fecha"])
-    except (KeyError, ValueError):
+        etiqueta, monto, recurrente, fecha, dia_mes = _parse_movimiento_form(request.form)
+    except KeyError:
         conn.close()
-        flash("Datos inválidos: revisá el monto y la fecha del impuesto.")
+        flash("Datos inválidos: revisá los campos del egreso.")
+        return redirect(url_for("main.configuracion"))
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc))
         return redirect(url_for("main.configuracion"))
 
-    if monto <= 0:
-        conn.close()
-        flash("El impuesto debe ser mayor a cero.")
-        return redirect(url_for("main.configuracion"))
-
-    db.add_impuesto(conn, fecha, monto)
+    db.add_egreso(conn, etiqueta, monto, recurrente, fecha, dia_mes)
     conn.close()
-    flash("Impuesto agregado.")
+    flash("Egreso agregado.")
     return redirect(url_for("main.configuracion"))
 
 
-@bp.route("/configuracion/impuesto/editar/<int:impuesto_id>", methods=["POST"])
-def editar_impuesto(impuesto_id):
+@bp.route("/configuracion/egreso/editar/<int:egreso_id>", methods=["POST"])
+def editar_egreso(egreso_id):
     conn = db.get_db()
     try:
-        monto = float(request.form["monto"])
-        fecha = date.fromisoformat(request.form["fecha"])
-    except (KeyError, ValueError):
+        etiqueta, monto, recurrente, fecha, dia_mes = _parse_movimiento_form(request.form)
+    except KeyError:
         conn.close()
-        flash("Datos inválidos: revisá el monto y la fecha del impuesto.")
+        flash("Datos inválidos: revisá los campos del egreso.")
+        return redirect(url_for("main.configuracion"))
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc))
         return redirect(url_for("main.configuracion"))
 
-    if monto <= 0:
-        conn.close()
-        flash("El impuesto debe ser mayor a cero.")
-        return redirect(url_for("main.configuracion"))
-
-    db.update_impuesto(conn, impuesto_id, fecha, monto)
+    db.update_egreso(conn, egreso_id, etiqueta, monto, recurrente, fecha, dia_mes)
     conn.close()
-    flash("Impuesto actualizado.")
+    flash("Egreso actualizado.")
     return redirect(url_for("main.configuracion"))
 
 
-@bp.route("/configuracion/impuesto/eliminar/<int:impuesto_id>", methods=["POST"])
-def eliminar_impuesto(impuesto_id):
+@bp.route("/configuracion/egreso/eliminar/<int:egreso_id>", methods=["POST"])
+def eliminar_egreso(egreso_id):
     conn = db.get_db()
-    db.delete_impuesto(conn, impuesto_id)
+    db.delete_egreso(conn, egreso_id)
     conn.close()
-    flash("Impuesto eliminado.")
+    flash("Egreso eliminado.")
+    return redirect(url_for("main.configuracion"))
+
+
+@bp.route("/configuracion/ingreso", methods=["POST"])
+def agregar_ingreso():
+    conn = db.get_db()
+    try:
+        etiqueta, monto, recurrente, fecha, dia_mes = _parse_movimiento_form(request.form)
+    except KeyError:
+        conn.close()
+        flash("Datos inválidos: revisá los campos del ingreso.")
+        return redirect(url_for("main.configuracion"))
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc))
+        return redirect(url_for("main.configuracion"))
+
+    db.add_ingreso(conn, etiqueta, monto, recurrente, fecha, dia_mes)
+    conn.close()
+    flash("Ingreso agregado.")
+    return redirect(url_for("main.configuracion"))
+
+
+@bp.route("/configuracion/ingreso/editar/<int:ingreso_id>", methods=["POST"])
+def editar_ingreso(ingreso_id):
+    conn = db.get_db()
+    try:
+        etiqueta, monto, recurrente, fecha, dia_mes = _parse_movimiento_form(request.form)
+    except KeyError:
+        conn.close()
+        flash("Datos inválidos: revisá los campos del ingreso.")
+        return redirect(url_for("main.configuracion"))
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc))
+        return redirect(url_for("main.configuracion"))
+
+    db.update_ingreso(conn, ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes)
+    conn.close()
+    flash("Ingreso actualizado.")
+    return redirect(url_for("main.configuracion"))
+
+
+@bp.route("/configuracion/ingreso/eliminar/<int:ingreso_id>", methods=["POST"])
+def eliminar_ingreso(ingreso_id):
+    conn = db.get_db()
+    db.delete_ingreso(conn, ingreso_id)
+    conn.close()
+    flash("Ingreso eliminado.")
     return redirect(url_for("main.configuracion"))
 
 
@@ -274,13 +327,11 @@ def historial():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
-    egresos = _egresos_pares(conn)
-    cuota_fija, sueldo = db.get_config_egresos(conn)
+    egresos = _egresos(conn)
+    ingresos = _ingresos(conn)
     conn.close()
 
-    summaries = simulate(
-        aportes, egresos, date.today(), wallets, cuota_fija=cuota_fija, sueldo=sueldo
-    )
+    summaries = simulate(aportes, egresos, ingresos, date.today(), wallets)
     capital_series = [
         {"date": s.date.isoformat(), "capital_cierre": s.capital_cierre} for s in summaries
     ]
@@ -298,13 +349,11 @@ def exportar_historial():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
-    egresos = _egresos_pares(conn)
-    cuota_fija, sueldo = db.get_config_egresos(conn)
+    egresos = _egresos(conn)
+    ingresos = _ingresos(conn)
     conn.close()
 
-    summaries = simulate(
-        aportes, egresos, date.today(), wallets, cuota_fija=cuota_fija, sueldo=sueldo
-    )
+    summaries = simulate(aportes, egresos, ingresos, date.today(), wallets)
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -363,13 +412,11 @@ def graficos():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
-    egresos = _egresos_pares(conn)
-    cuota_fija, sueldo = db.get_config_egresos(conn)
+    egresos = _egresos(conn)
+    ingresos = _ingresos(conn)
     conn.close()
 
-    summaries = simulate(
-        aportes, egresos, date.today(), wallets, cuota_fija=cuota_fija, sueldo=sueldo
-    )
+    summaries = simulate(aportes, egresos, ingresos, date.today(), wallets)
 
     # Serie de capital + desglose aportado vs. ganancia generada, para el
     # área apilada "aportes vs. ganancia".
@@ -437,8 +484,8 @@ def proyeccion():
         return redirect(url_for("main.configuracion"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
-    egresos = _egresos_pares(conn)
-    cuota_fija, sueldo = db.get_config_egresos(conn)
+    egresos = _egresos(conn)
+    ingresos = _ingresos(conn)
     conn.close()
 
     hoy = date.today()
@@ -479,12 +526,7 @@ def proyeccion():
 
     principal_total = sum(monto for _, monto in aportes)
     summaries = simulate(
-        aportes + aportes_planeados,
-        egresos,
-        fecha_objetivo,
-        wallets,
-        cuota_fija=cuota_fija,
-        sueldo=sueldo,
+        aportes + aportes_planeados, egresos, ingresos, fecha_objetivo, wallets
     )
     capital_hoy = next((s.capital_cierre for s in summaries if s.date == hoy), principal_total)
     capital_final = summaries[-1].capital_cierre if summaries else principal_total

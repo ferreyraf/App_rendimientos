@@ -21,7 +21,11 @@
     <p class="stat-value">${{ "%.2f"|format(total_aportado) }}</p>
   </div>
   <div class="stat-tile">
-    <p class="stat-label">Total egresos (cuota fija + impuestos)</p>
+    <p class="stat-label">Total ingresos (sueldo y otros)</p>
+    <p class="stat-value positivo">${{ "%.2f"|format(total_ingresos) }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Total egresos</p>
     <p class="stat-value negativo">${{ "%.2f"|format(total_egresos) }}</p>
   </div>
 </div>
@@ -90,6 +94,13 @@
   {% endfor %}
   </tbody>
 </table>
+
+{% if summary.ingresos or summary.egresos %}
+<p class="total">
+  {% for m in summary.ingresos %}<span class="badge">+${{ "%.2f"|format(m.monto) }} {{ m.etiqueta }}</span>{% endfor %}
+  {% for m in summary.egresos %}<span class="badge badge-warning">-${{ "%.2f"|format(m.monto) }} {{ m.etiqueta }}</span>{% endfor %}
+</p>
+{% endif %}
 
 <p class="total">Rendimiento generado hoy: <strong>${{ "%.2f"|format(summary.rendimiento_generado) }}</strong></p>
 <p class="total">Rendimiento acreditado hoy: <strong>${{ "%.2f"|format(summary.rendimiento_acreditado) }}</strong></p>

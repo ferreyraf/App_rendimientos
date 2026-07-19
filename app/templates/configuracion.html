@@ -48,55 +48,138 @@
 </div>
 
 <h2>Egresos</h2>
-<p class="subtitle">Movimientos recurrentes y puntuales que restan capital del rulo</p>
+<p class="subtitle">Etiquetá cada gasto y marcá si se repite todos los meses — la proyección a futuro los contempla</p>
 
 <div class="two-col">
   <section class="chart-card">
-    <h3>Recurrentes mensuales</h3>
-    <form method="post" action="{{ url_for('main.actualizar_egresos_fijos') }}" class="config-form">
-      <label for="cuota_fija">Cuota fija (se resta el último día de cada mes)</label>
-      <input type="number" step="0.01" min="0" id="cuota_fija" name="cuota_fija" value="{{ cuota_fija }}">
-
-      <label for="sueldo">Sueldo (se suma el 5to día hábil de cada mes)</label>
-      <input type="number" step="0.01" min="0" id="sueldo" name="sueldo" value="{{ sueldo }}">
-
-      <button type="submit">Guardar</button>
-    </form>
-  </section>
-
-  <section class="chart-card">
-    <h3>Impuestos / deudas</h3>
     <table>
       <thead>
         <tr>
-          <th>Fecha</th>
+          <th>Etiqueta</th>
           <th>Monto</th>
+          <th>Recurrente</th>
+          <th>Fecha / día del mes</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
-        {% for id, fecha, monto in impuestos %}
+        {% for id, m in egresos %}
           <tr>
-            <td><input type="date" form="impuesto-{{ id }}" name="fecha" value="{{ fecha.isoformat() }}" required></td>
-            <td><input type="number" step="0.01" min="0.01" form="impuesto-{{ id }}" name="monto" value="{{ monto }}" required></td>
+            <td><input type="text" form="egreso-{{ id }}" name="etiqueta" value="{{ m.etiqueta }}" required></td>
+            <td><input type="number" step="0.01" min="0.01" form="egreso-{{ id }}" name="monto" value="{{ m.monto }}" required></td>
             <td>
-              <button type="submit" form="impuesto-{{ id }}" formaction="{{ url_for('main.editar_impuesto', impuesto_id=id) }}">Guardar</button>
-              <button type="submit" form="impuesto-{{ id }}" formaction="{{ url_for('main.eliminar_impuesto', impuesto_id=id) }}">Eliminar</button>
+              <label><input type="checkbox" form="egreso-{{ id }}" name="recurrente" onchange="toggleRecurrente(this)" {{ "checked" if m.recurrente }}> mensual</label>
+            </td>
+            <td>
+              <input type="date" form="egreso-{{ id }}" name="fecha" class="fecha-field" value="{{ m.fecha.isoformat() if m.fecha else '' }}" {{ "hidden" if m.recurrente }}>
+              <input type="number" form="egreso-{{ id }}" name="dia_mes" class="dia-mes-field" min="1" max="31" placeholder="Día (1-31)" value="{{ m.dia_mes or '' }}" {{ "hidden" if not m.recurrente }}>
+            </td>
+            <td>
+              <button type="submit" form="egreso-{{ id }}" formaction="{{ url_for('main.editar_egreso', egreso_id=id) }}">Guardar</button>
+              <button type="submit" form="egreso-{{ id }}" formaction="{{ url_for('main.eliminar_egreso', egreso_id=id) }}">Eliminar</button>
             </td>
           </tr>
-          <form id="impuesto-{{ id }}" method="post"></form>
+          <form id="egreso-{{ id }}" method="post"></form>
         {% else %}
-          <tr><td colspan="3">Todavía no cargaste ningún impuesto.</td></tr>
+          <tr><td colspan="5">Todavía no cargaste ningún egreso.</td></tr>
         {% endfor %}
       </tbody>
     </table>
-    <form method="post" action="{{ url_for('main.agregar_impuesto') }}" class="inline-form" style="margin-top: 0.75rem;">
-      <input type="number" step="0.01" min="0.01" name="monto" placeholder="Monto" required>
-      <input type="date" name="fecha" required>
+  </section>
+
+  <section class="chart-card">
+    <h3>Agregar egreso</h3>
+    <form method="post" action="{{ url_for('main.agregar_egreso') }}" class="config-form">
+      <label for="egreso_etiqueta">Etiqueta</label>
+      <input type="text" id="egreso_etiqueta" name="etiqueta" placeholder="Ej. Alquiler, Tarjeta, Impuesto" required>
+
+      <label for="egreso_monto">Monto</label>
+      <input type="number" step="0.01" min="0.01" id="egreso_monto" name="monto" required>
+
+      <label><input type="checkbox" name="recurrente" onchange="toggleRecurrente(this)"> Se repite todos los meses</label>
+
+      <label for="egreso_fecha" class="fecha-field">Fecha</label>
+      <input type="date" id="egreso_fecha" name="fecha" class="fecha-field">
+
+      <label for="egreso_dia_mes" class="dia-mes-field" hidden>Día del mes (1-31)</label>
+      <input type="number" id="egreso_dia_mes" name="dia_mes" class="dia-mes-field" min="1" max="31" hidden>
+
       <button type="submit">Agregar</button>
     </form>
   </section>
 </div>
+
+<h2>Ingresos</h2>
+<p class="subtitle">Sueldo y otros ingresos, etiquetados y con la misma lógica de recurrencia que los egresos</p>
+
+<div class="two-col">
+  <section class="chart-card">
+    <table>
+      <thead>
+        <tr>
+          <th>Etiqueta</th>
+          <th>Monto</th>
+          <th>Recurrente</th>
+          <th>Fecha / día del mes</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for id, m in ingresos %}
+          <tr>
+            <td><input type="text" form="ingreso-{{ id }}" name="etiqueta" value="{{ m.etiqueta }}" required></td>
+            <td><input type="number" step="0.01" min="0.01" form="ingreso-{{ id }}" name="monto" value="{{ m.monto }}" required></td>
+            <td>
+              <label><input type="checkbox" form="ingreso-{{ id }}" name="recurrente" onchange="toggleRecurrente(this)" {{ "checked" if m.recurrente }}> mensual</label>
+            </td>
+            <td>
+              <input type="date" form="ingreso-{{ id }}" name="fecha" class="fecha-field" value="{{ m.fecha.isoformat() if m.fecha else '' }}" {{ "hidden" if m.recurrente }}>
+              <input type="number" form="ingreso-{{ id }}" name="dia_mes" class="dia-mes-field" min="1" max="31" placeholder="Día (1-31)" value="{{ m.dia_mes or '' }}" {{ "hidden" if not m.recurrente }}>
+            </td>
+            <td>
+              <button type="submit" form="ingreso-{{ id }}" formaction="{{ url_for('main.editar_ingreso', ingreso_id=id) }}">Guardar</button>
+              <button type="submit" form="ingreso-{{ id }}" formaction="{{ url_for('main.eliminar_ingreso', ingreso_id=id) }}">Eliminar</button>
+            </td>
+          </tr>
+          <form id="ingreso-{{ id }}" method="post"></form>
+        {% else %}
+          <tr><td colspan="5">Todavía no cargaste ningún ingreso.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="chart-card">
+    <h3>Agregar ingreso</h3>
+    <form method="post" action="{{ url_for('main.agregar_ingreso') }}" class="config-form">
+      <label for="ingreso_etiqueta">Etiqueta</label>
+      <input type="text" id="ingreso_etiqueta" name="etiqueta" placeholder="Ej. Sueldo, Freelance" required>
+
+      <label for="ingreso_monto">Monto</label>
+      <input type="number" step="0.01" min="0.01" id="ingreso_monto" name="monto" required>
+
+      <label><input type="checkbox" name="recurrente" onchange="toggleRecurrente(this)"> Se repite todos los meses</label>
+
+      <label for="ingreso_fecha" class="fecha-field">Fecha</label>
+      <input type="date" id="ingreso_fecha" name="fecha" class="fecha-field">
+
+      <label for="ingreso_dia_mes" class="dia-mes-field" hidden>Día del mes (1-31)</label>
+      <input type="number" id="ingreso_dia_mes" name="dia_mes" class="dia-mes-field" min="1" max="31" hidden>
+
+      <button type="submit">Agregar</button>
+    </form>
+  </section>
+</div>
+
+<script>
+  function toggleRecurrente(checkbox) {
+    const scope = checkbox.closest("tr") || checkbox.closest("form");
+    const fecha = scope.querySelectorAll(".fecha-field");
+    const diaMes = scope.querySelectorAll(".dia-mes-field");
+    fecha.forEach((el) => { el.hidden = checkbox.checked; });
+    diaMes.forEach((el) => { el.hidden = !checkbox.checked; });
+  }
+</script>
 
 <h2>Billeteras</h2>
 <p class="subtitle">Ajustá tasa y horarios cuando la billetera los cambie</p>

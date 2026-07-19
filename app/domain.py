@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
@@ -62,6 +63,28 @@ class CaptureEvent:
     limitado: bool = False  # True si el piso/techo de la billetera alteró el cálculo
 
 
+@dataclass(frozen=True)
+class MovimientoRecurrente:
+    """Definición de un egreso o ingreso etiquetado, cargada por el usuario.
+
+    Si `recurrente` es True, se aplica todos los meses en `dia_mes` (1-31;
+    si el mes no tiene ese día, se aplica el último día del mes). Si es
+    False, es puntual y se aplica una única vez en `fecha`.
+    """
+
+    etiqueta: str
+    monto: float
+    recurrente: bool
+    fecha: date | None = None
+    dia_mes: int | None = None
+
+
+@dataclass
+class Movimiento:
+    etiqueta: str
+    monto: float
+
+
 @dataclass
 class DaySummary:
     date: date
@@ -69,10 +92,18 @@ class DaySummary:
     rendimiento_generado: float = 0.0
     rendimiento_acreditado: float = 0.0
     aporte_recibido: float = 0.0
-    ingreso_recibido: float = 0.0
-    egreso_pagado: float = 0.0
+    ingresos: list[Movimiento] = field(default_factory=list)
+    egresos: list[Movimiento] = field(default_factory=list)
     capital_apertura: float = 0.0
     capital_cierre: float = 0.0
+
+    @property
+    def ingreso_recibido(self) -> float:
+        return sum(m.monto for m in self.ingresos)
+
+    @property
+    def egreso_pagado(self) -> float:
+        return sum(m.monto for m in self.egresos)
 
 
 @dataclass
@@ -83,6 +114,7 @@ class _Evento:
     wallet_name: str = ""
     rendimiento: float = 0.0  # solo "payout"; lo completa la captura emparejada
     monto: float = 0.0  # solo "aporte"/"ingreso"/"egreso"
+    etiqueta: str = ""  # solo "ingreso"/"egreso"
     pago: "_Evento | None" = None  # solo "capture": referencia a su evento de pago
     dias_acumulados: int = 1  # solo "capture": cuántos días de rendimiento acumula su pago
     ancla_id: str = ""  # solo "split"/"merge": billetera que se queda con el umbral
@@ -90,13 +122,27 @@ class _Evento:
     umbral: float = 0.0  # solo "split"
 
 
+def _fechas_recurrentes(dia_mes: int, start: date, end: date) -> list[date]:
+    """Fechas concretas (una por mes) en que cae un `dia_mes` recurrente
+    entre `start` y `end` (inclusive). Si un mes no tiene ese día (ej. 31 en
+    febrero), usa el último día de ese mes."""
+    fechas = []
+    anio, mes = start.year, start.month
+    while date(anio, mes, 1) <= end:
+        ultimo_dia = calendar.monthrange(anio, mes)[1]
+        fecha_evento = date(anio, mes, min(dia_mes, ultimo_dia))
+        if start <= fecha_evento <= end:
+            fechas.append(fecha_evento)
+        anio, mes = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
+    return fechas
+
+
 def simulate(
     aportes: list[tuple[date, float]],
-    egresos: list[tuple[date, float]],
+    egresos: list[MovimientoRecurrente],
+    ingresos: list[MovimientoRecurrente],
     end_date: date,
     wallets: list[Wallet],
-    cuota_fija: float = 0.0,
-    sueldo: float = 0.0,
 ) -> list[DaySummary]:
     """Reconstruye día a día el capital del rulo hasta end_date (inclusive).
 
@@ -104,11 +150,10 @@ def simulate(
     aporte cronológico marca el arranque de la simulación, y aportes
     posteriores (ej. uno por mes) se suman al capital en su propia fecha.
 
-    `egresos` es la lista de retiros con fecha puntual (ej. impuestos cargados
-    a mano). `cuota_fija`, si es mayor a cero, se retira automáticamente el
-    último día calendario de cada mes dentro del rango simulado (ej. cuotas de
-    deudas fijas). `sueldo`, si es mayor a cero, se acredita automáticamente
-    el 5to día hábil (lunes a viernes) de cada mes.
+    `egresos` e `ingresos` son listas de `MovimientoRecurrente` etiquetados:
+    puntuales (una fecha) o recurrentes (todos los meses en `dia_mes`, ej.
+    alquiler el día 10 o sueldo el día 5; si el mes no tiene ese día, cae el
+    último día del mes).
 
     Cada captura genera un rendimiento pendiente que se acredita 24hs después
     (en el payout_time de la billetera). Si esa billetera no procesa pagos en
@@ -124,29 +169,31 @@ def simulate(
     start_date = min(fecha for fecha, _ in aportes)
     wallets_by_id = {w.id: w for w in wallets}
 
-    eventos: list[_Evento] = [
-        _Evento(datetime.combine(fecha, time.min), "aporte", monto=monto)
-        for fecha, monto in aportes
-    ] + [
-        _Evento(datetime.combine(fecha, time.min), "egreso", monto=monto)
-        for fecha, monto in egresos
-    ]
+    def _eventos_movimiento(items: list[MovimientoRecurrente], tipo: str) -> list[_Evento]:
+        eventos = []
+        for item in items:
+            fechas = (
+                _fechas_recurrentes(item.dia_mes, start_date, end_date)
+                if item.recurrente
+                else ([item.fecha] if start_date <= item.fecha <= end_date else [])
+            )
+            eventos += [
+                _Evento(datetime.combine(f, time.min), tipo, monto=item.monto, etiqueta=item.etiqueta)
+                for f in fechas
+            ]
+        return eventos
+
+    eventos: list[_Evento] = (
+        [
+            _Evento(datetime.combine(fecha, time.min), "aporte", monto=monto)
+            for fecha, monto in aportes
+        ]
+        + _eventos_movimiento(egresos, "egreso")
+        + _eventos_movimiento(ingresos, "ingreso")
+    )
     fecha = start_date
     while fecha <= end_date:
         weekday = fecha.weekday()
-
-        ultimo_dia_del_mes = (fecha + timedelta(days=1)).month != fecha.month
-        if ultimo_dia_del_mes and cuota_fija > 0:
-            eventos.append(_Evento(datetime.combine(fecha, time.min), "egreso", monto=cuota_fija))
-
-        if fecha.day == 1 and sueldo > 0:
-            d, habiles = fecha, 0
-            while habiles < 5:
-                if d.weekday() in WEEKDAYS:
-                    habiles += 1
-                if habiles < 5:
-                    d += timedelta(days=1)
-            eventos.append(_Evento(datetime.combine(d, time.min), "ingreso", monto=sueldo))
 
         if weekday == 5:  # sábado: posible split de fin de semana
             for wallet in wallets:
@@ -284,10 +331,10 @@ def simulate(
             dia.aporte_recibido += evento.monto
         elif evento.tipo == "ingreso":
             sumar_capital(evento.monto)
-            dia.ingreso_recibido += evento.monto
+            dia.ingresos.append(Movimiento(evento.etiqueta, evento.monto))
         elif evento.tipo == "egreso":
             restar_capital(evento.monto)
-            dia.egreso_pagado += evento.monto
+            dia.egresos.append(Movimiento(evento.etiqueta, evento.monto))
         elif evento.tipo == "split":
             monto_ancla = min(capital, evento.umbral)
             pozos = {evento.ancla_id: monto_ancla, evento.socio_id: capital - monto_ancla}

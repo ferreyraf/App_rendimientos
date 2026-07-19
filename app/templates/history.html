@@ -16,8 +16,8 @@
     <span class="day-summary-date">
       {{ s.date.strftime("%d/%m/%Y") }}
       {% if s.aporte_recibido > 0 %}<span class="badge">+${{ "%.2f"|format(s.aporte_recibido) }} aporte</span>{% endif %}
-      {% if s.ingreso_recibido > 0 %}<span class="badge">+${{ "%.2f"|format(s.ingreso_recibido) }} sueldo</span>{% endif %}
-      {% if s.egreso_pagado > 0 %}<span class="badge badge-warning">-${{ "%.2f"|format(s.egreso_pagado) }} egreso</span>{% endif %}
+      {% for m in s.ingresos %}<span class="badge">+${{ "%.2f"|format(m.monto) }} {{ m.etiqueta }}</span>{% endfor %}
+      {% for m in s.egresos %}<span class="badge badge-warning">-${{ "%.2f"|format(m.monto) }} {{ m.etiqueta }}</span>{% endfor %}
     </span>
     <span class="day-summary-figures">
       Rendimiento ${{ "%.2f"|format(s.rendimiento_generado) }} · Capital <strong>${{ "%.2f"|format(s.capital_cierre) }}</strong>
