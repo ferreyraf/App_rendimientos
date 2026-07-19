@@ -45,7 +45,9 @@
 <div class="two-col">
   <section class="chart-card">
     <h2>Ingresos vs. egresos (mes actual)</h2>
-    <canvas id="ingresosEgresosChart" height="160" role="img" aria-label="Ingresos vs. egresos del mes actual"></canvas>
+    <div class="pie-chart-wrap">
+      <canvas id="ingresosEgresosChart" role="img" aria-label="Ingresos vs. egresos del mes actual"></canvas>
+    </div>
     <details>
       <summary class="subtitle">Ver como tabla</summary>
       <table>
@@ -61,7 +63,9 @@
   <section class="chart-card">
     <h2>Egresos por categoría (mes actual)</h2>
     {% if egresos_por_categoria %}
-    <canvas id="categoriasChart" height="160" role="img" aria-label="Egresos del mes actual agrupados por categoría"></canvas>
+    <div class="pie-chart-wrap">
+      <canvas id="categoriasChart" role="img" aria-label="Egresos del mes actual agrupados por categoría"></canvas>
+    </div>
     <details>
       <summary class="subtitle">Ver como tabla</summary>
       <table>

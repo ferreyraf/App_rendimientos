@@ -271,6 +271,11 @@ button:hover {
   margin-bottom: 0.75rem;
 }
 
+.pie-chart-wrap {
+  max-width: 240px;
+  margin: 0 auto;
+}
+
 .day-summary {
   display: flex;
   justify-content: space-between;
