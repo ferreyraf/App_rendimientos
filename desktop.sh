@@ -7,4 +7,4 @@ if [ ! -d .venv ]; then
   .venv/bin/pip install -q -r requirements.txt
 fi
 
-exec .venv/bin/python run.py
+exec .venv/bin/python desktop.py

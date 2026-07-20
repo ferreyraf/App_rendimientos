@@ -1,10 +1,16 @@
 import sqlite3
+import sys
 from datetime import date
 from pathlib import Path
 
 from .domain import DEFAULT_WALLETS, MovimientoRecurrente
 
-DB_PATH = Path(__file__).resolve().parent.parent / "instance" / "rendimientos.db"
+if getattr(sys, "frozen", False):
+    _BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    _BASE_DIR = Path(__file__).resolve().parent.parent
+
+DB_PATH = _BASE_DIR / "instance" / "rendimientos.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS wallets (
