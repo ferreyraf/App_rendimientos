@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Recuperación de capital</h1>
+<p class="subtitle">Estimá cuánto tardarías en recuperar un gasto puntual, según la ganancia que va generando el rulo</p>
+
+<form method="post" class="config-form">
+  <label for="etiqueta">¿Qué te comprás? (opcional)</label>
+  <input type="text" id="etiqueta" name="etiqueta" value="{{ etiqueta }}" placeholder="Ej: auriculares">
+
+  <label for="monto">Monto del gasto</label>
+  <input type="number" step="0.01" min="0.01" id="monto" name="monto" value="{{ monto_gasto if monto_gasto is not none else '' }}" required>
+
+  <label for="fecha_gasto">Fecha del gasto</label>
+  <input type="date" id="fecha_gasto" name="fecha_gasto" value="{{ fecha_gasto.isoformat() }}" required>
+
+  <label style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.6rem;">
+    <input type="checkbox" name="incluir_movimientos" {{ "checked" if incluir_movimientos }} style="width: auto;">
+    Sumar los ingresos y egresos ya cargados en Configuración (sueldo, alquiler, etc.)
+  </label>
+  <p class="subtitle" style="margin: 0.15rem 0 0;">
+    Desmarcado (por defecto): cálculo crudo, solo el capital del rulo y su rendimiento propio.
+  </p>
+
+  <button type="submit">Estimar</button>
+</form>
+
+<div class="kpi-row">
+  <div class="stat-tile">
+    <p class="stat-label">Capital hoy ({{ hoy.strftime("%d/%m/%Y") }})</p>
+    <p class="stat-value">${{ "%.2f"|format(capital_hoy) }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">TEA lograda por el rulo</p>
+    <p class="stat-value">{{ "%.2f"|format(tea_lograda) }}%</p>
+  </div>
+  {% if capital_base is not none %}
+  <div class="stat-tile">
+    <p class="stat-label">Capital el {{ fecha_gasto.strftime("%d/%m/%Y") }}</p>
+    <p class="stat-value">${{ "%.2f"|format(capital_base) }}</p>
+  </div>
+  {% endif %}
+  {% if monto_gasto is not none %}
+  <div class="stat-tile">
+    <p class="stat-label">
+      {% if fecha_estimada %}Recuperás {{ etiqueta or "el gasto" }} en{% else %}No se recupera dentro de{% endif %}
+    </p>
+    {% if fecha_estimada %}
+      <p class="stat-value positivo">{{ dias_estimados }} día{{ "s" if dias_estimados != 1 }}</p>
+      <p class="stat-label">({{ fecha_estimada.strftime("%d/%m/%Y") }})</p>
+    {% else %}
+      <p class="stat-value negativo">{{ horizonte_anios }} año{{ "s" if horizonte_anios != 1 }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if monto_gasto is not none %}
+<p class="subtitle">
+  Cálculo {{ "con" if incluir_movimientos else "crudo, sin" }} ingresos/egresos ya configurados, desde el {{ fecha_gasto.strftime("%d/%m/%Y") }}.
+</p>
+{% endif %}
+
+{% if monto_gasto is not none and not fecha_estimada %}
+<p class="subtitle">
+  Con el ritmo actual del rulo, un gasto de ${{ "%.2f"|format(monto_gasto) }} no se recupera dentro del horizonte simulado ({{ horizonte_anios }} años desde el gasto). Puede deberse a una TNA baja, egresos que superan la ganancia (si están incluidos), o un monto muy alto.
+</p>
+{% endif %}
+
+{% if ganancia_periodica %}
+<section class="chart-card">
+  <h2>Ganancia acumulada vs. gasto</h2>
+  <p class="subtitle">Camino de la ganancia acumulada desde hoy hasta el punto de recuperación (línea punteada: monto del gasto)</p>
+  <canvas id="recuperacionChart" height="120" role="img" aria-label="Ganancia acumulada en pesos comparada contra el monto del gasto"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Fecha</th><th>Ganancia acumulada</th></tr></thead>
+      <tbody>
+        {% for point in ganancia_periodica %}
+          <tr>
+            <td>{{ point.date }}</td>
+            <td>${{ "%.2f"|format(point.ganancia_acumulada) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+
+  const ink = token('--text-secondary');
+  const grid = token('--gridline');
+  const success = token('--success-text');
+  const critical = token('--status-critical');
+  const seriesGray = token('--neutral-fill');
+
+  const gananciaPeriodica = {{ ganancia_periodica | tojson }};
+  const montoGasto = {{ monto_gasto | tojson }};
+  const fmtMoney = (v) => '$' + Math.round(v).toLocaleString('es-AR');
+
+  new Chart(document.getElementById('recuperacionChart'), {
+    type: 'bar',
+    data: {
+      labels: gananciaPeriodica.map(p => p.date),
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Ganancia acumulada',
+          data: gananciaPeriodica.map(p => p.ganancia_acumulada),
+          backgroundColor: gananciaPeriodica.map(p => p.ganancia_acumulada >= montoGasto ? success : critical),
+          borderRadius: 4,
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Monto del gasto',
+          data: gananciaPeriodica.map(() => montoGasto),
+          borderColor: seriesGray,
+          borderDash: [6, 4],
+          borderWidth: 2,
+          pointRadius: 0,
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink }, grid: { display: false } },
+        y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { labels: { color: ink } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${fmtMoney(ctx.raw)}`,
+          },
+        },
+      },
+    },
+  });
+</script>
+{% endif %}
+{% endblock %}

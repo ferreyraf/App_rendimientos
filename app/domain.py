@@ -445,12 +445,59 @@ def billetera_actual(desde: datetime, wallets: list[Wallet]) -> tuple[datetime, 
     return max(candidatos, key=lambda item: item[0])
 
 
-def capital_simple(aportes: list[tuple[date, float]], tna_percent: float, hasta: date) -> float:
+def _flujos_movimiento(
+    items: list[MovimientoRecurrente], start: date, end: date, signo: int
+) -> list[tuple[date, float]]:
+    """Resuelve egresos/ingresos etiquetados a flujos de caja fechados (mismo
+    criterio que `simulate` para recurrentes/puntuales), con `signo` -1 o 1."""
+    flujos = []
+    for item in items:
+        fechas = (
+            _fechas_recurrentes(item.dia_mes, item.dia_habil, start, end)
+            if item.recurrente
+            else ([item.fecha] if item.fecha is not None and start <= item.fecha <= end else [])
+        )
+        flujos += [(f, signo * item.monto) for f in fechas]
+    return flujos
+
+
+def capital_simple(
+    aportes: list[tuple[date, float]],
+    tna_percent: float,
+    hasta: date,
+    egresos: list[MovimientoRecurrente] | None = None,
+    ingresos: list[MovimientoRecurrente] | None = None,
+) -> float:
     """Capital resultante de dejar cada aporte quieto (interés simple, sin
-    capitalizar) desde su propia fecha hasta `hasta`, a una TNA fija."""
+    capitalizar) desde su propia fecha hasta `hasta`, a una TNA fija.
+
+    Si se pasan `egresos`/`ingresos`, se suman como flujos fechados (negativos
+    y positivos respectivamente) igual que en `simulate` — para comparar la
+    estrategia de "dejar todo quieto" contra el rulo real en igualdad de
+    condiciones (los mismos gastos e ingresos afectando a ambos)."""
+    start = min(fecha for fecha, _ in aportes)
+    flujos = list(aportes)
+    if egresos:
+        flujos += _flujos_movimiento(egresos, start, hasta, signo=-1)
+    if ingresos:
+        flujos += _flujos_movimiento(ingresos, start, hasta, signo=1)
     return sum(
         monto + monto * (tna_percent / 100) * ((hasta - fecha).days + 1) / 365
-        for fecha, monto in aportes
+        for fecha, monto in flujos
+        if fecha <= hasta
+    )
+
+
+def fecha_recuperacion(
+    summaries: list[DaySummary], capital_base: float, monto: float, desde: date
+) -> date | None:
+    """Primera fecha, desde `desde` en adelante, en que el capital de cierre
+    supera a `capital_base` en al menos `monto` — cuánto tardaría el rulo en
+    generar, en ganancia acumulada, lo mismo que costó un gasto puntual.
+    `None` si no se alcanza dentro del rango simulado."""
+    return next(
+        (s.date for s in summaries if s.date >= desde and s.capital_cierre - capital_base >= monto),
+        None,
     )
 
 

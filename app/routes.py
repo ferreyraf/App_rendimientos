@@ -11,6 +11,7 @@ from .domain import (
     billetera_actual,
     capital_simple,
     daily_yield,
+    fecha_recuperacion,
     movimientos_del_mes,
     proxima_captura,
     proximo_vencimiento_impuestos,
@@ -138,7 +139,7 @@ def dashboard():
     tea_lograda = tasa_efectiva_anual(principal_total, capital_hoy, dias_totales)
 
     mejor_quieto = max(
-        (capital_simple(aportes, w.default_tna, hoy) for w in wallets if w.activo),
+        (capital_simple(aportes, w.default_tna, hoy, egresos, ingresos) for w in wallets if w.activo),
         default=principal_total,
     )
     ventaja_rulo = capital_hoy - mejor_quieto
@@ -504,7 +505,10 @@ def graficos():
     dias_totales = (hoy - min(fecha for fecha, _ in aportes)).days + 1
     capital_final_rulo = summaries[-1].capital_cierre if summaries else principal_total
     comparacion = [
-        {"nombre": w.name, "capital_final": capital_simple(aportes, w.default_tna, hoy)}
+        {
+            "nombre": w.name,
+            "capital_final": capital_simple(aportes, w.default_tna, hoy, egresos, ingresos),
+        }
         for w in wallets
         if w.activo
     ]
@@ -580,10 +584,46 @@ def proyeccion():
     capital_hoy = next((s.capital_cierre for s in summaries if s.date == hoy), principal_total)
     capital_final = summaries[-1].capital_cierre if summaries else principal_total
 
+    # Comparación contra "dejar todo quieto" en la mejor billetera activa
+    # (interés simple, sin rotar), con los mismos gastos e ingresos reales
+    # descontados — para dimensionar la ventaja de rotar también a futuro.
+    mejor_tna = max((w.default_tna for w in wallets if w.activo), default=0.0)
+    capital_quieto = capital_simple(
+        aportes + aportes_planeados, mejor_tna, fecha_objetivo, egresos, ingresos
+    )
+    ventaja_rulo_proyectada = capital_final - capital_quieto
+
     capital_series = [
         {"date": s.date.isoformat(), "capital_cierre": s.capital_cierre, "futuro": s.date > hoy}
         for s in summaries
     ]
+
+    # Puntos de control entre hoy y la fecha objetivo (~6 tramos), para mostrar
+    # la ganancia numérica acumulada y por tramo en un gráfico de barras.
+    capital_por_fecha = {s.date: s.capital_cierre for s in summaries}
+    dias_totales = (fecha_objetivo - hoy).days
+    n_tramos = min(8, max(1, dias_totales))
+    paso = max(1, round(dias_totales / n_tramos))
+    checkpoints = []
+    d = hoy
+    while d < fecha_objetivo:
+        d = min(d + timedelta(days=paso), fecha_objetivo)
+        checkpoints.append(d)
+    if not checkpoints or checkpoints[-1] != fecha_objetivo:
+        checkpoints.append(fecha_objetivo)
+
+    ganancia_periodica = []
+    capital_previo = capital_hoy
+    for cp in checkpoints:
+        capital_cp = capital_por_fecha.get(cp, capital_final)
+        ganancia_periodica.append(
+            {
+                "date": cp.isoformat(),
+                "ganancia_periodo": capital_cp - capital_previo,
+                "ganancia_acumulada": capital_cp - capital_hoy,
+            }
+        )
+        capital_previo = capital_cp
 
     return render_template(
         "proyeccion.html",
@@ -593,7 +633,116 @@ def proyeccion():
         capital_final=capital_final,
         rendimiento_proyectado=capital_final - capital_hoy,
         capital_series=capital_series,
+        ganancia_periodica=ganancia_periodica,
         aportes_planeados=aportes_planeados,
+        mejor_tna=mejor_tna,
+        capital_quieto=capital_quieto,
+        ventaja_rulo_proyectada=ventaja_rulo_proyectada,
+    )
+
+
+@bp.route("/recuperacion", methods=["GET", "POST"])
+def recuperacion():
+    conn = db.get_db()
+    aportes = _aportes_pares(conn)
+    if not aportes:
+        conn.close()
+        return redirect(url_for("main.configuracion"))
+
+    wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    egresos = _egresos(conn)
+    ingresos = _ingresos(conn)
+    conn.close()
+
+    hoy = date.today()
+    inicio_rulo = min(fecha for fecha, _ in aportes)
+    horizonte_anios = 5
+
+    principal_total = sum(monto for _, monto in aportes)
+    dias_totales = (hoy - inicio_rulo).days + 1
+    capital_hoy = simulate(aportes, egresos, ingresos, hoy, wallets)[-1].capital_cierre
+    tea_lograda = tasa_efectiva_anual(principal_total, capital_hoy, dias_totales)
+
+    etiqueta = ""
+    monto_gasto = None
+    fecha_gasto = hoy
+    incluir_movimientos = False
+    capital_base = None
+    fecha_estimada = None
+    dias_estimados = None
+    ganancia_periodica = []
+
+    if request.method == "POST":
+        etiqueta = (request.form.get("etiqueta") or "").strip()
+        incluir_movimientos = request.form.get("incluir_movimientos") == "on"
+        try:
+            monto_gasto = float(request.form["monto"])
+            fecha_gasto = date.fromisoformat(request.form["fecha_gasto"])
+        except (KeyError, ValueError):
+            flash("Datos inválidos: revisá el monto y la fecha del gasto.")
+            return redirect(url_for("main.recuperacion"))
+        if monto_gasto <= 0:
+            flash("El monto debe ser mayor a cero.")
+            return redirect(url_for("main.recuperacion"))
+        if fecha_gasto < inicio_rulo:
+            flash("La fecha del gasto no puede ser anterior al inicio del rulo.")
+            return redirect(url_for("main.recuperacion"))
+
+        # El capital al día del gasto es siempre un hecho real (con los
+        # aportes, ingresos y egresos tal cual quedaron cargados) — el
+        # checkbox de "cálculo crudo" solo afecta la proyección posterior,
+        # no este punto de partida.
+        historial = simulate(aportes, egresos, ingresos, max(fecha_gasto, hoy), wallets)
+        capital_base = next(s.capital_cierre for s in historial if s.date == fecha_gasto)
+
+        # Desde el día del gasto se reinicia la simulación con ese capital
+        # como único aporte, para proyectar "en limpio" hacia adelante: solo
+        # el rendimiento propio del rulo, salvo que se pida sumar también los
+        # ingresos/egresos ya configurados (sueldo, alquiler, etc.).
+        horizonte = fecha_gasto + timedelta(days=365 * horizonte_anios)
+        egresos_proy = egresos if incluir_movimientos else []
+        ingresos_proy = ingresos if incluir_movimientos else []
+        summaries_proy = simulate(
+            [(fecha_gasto, capital_base)], egresos_proy, ingresos_proy, horizonte, wallets
+        )
+
+        fecha_estimada = fecha_recuperacion(summaries_proy, capital_base, monto_gasto, fecha_gasto)
+        if fecha_estimada is not None:
+            dias_estimados = (fecha_estimada - fecha_gasto).days
+
+        limite = fecha_estimada or horizonte
+        capital_por_fecha = {s.date: s.capital_cierre for s in summaries_proy}
+        dias_ventana = (limite - fecha_gasto).days
+        n_tramos = min(8, max(1, dias_ventana))
+        paso = max(1, round(dias_ventana / n_tramos))
+        checkpoints = []
+        d = fecha_gasto
+        while d < limite:
+            d = min(d + timedelta(days=paso), limite)
+            checkpoints.append(d)
+        if not checkpoints or checkpoints[-1] != limite:
+            checkpoints.append(limite)
+
+        for cp in checkpoints:
+            capital_cp = capital_por_fecha.get(cp, capital_base)
+            ganancia_periodica.append(
+                {"date": cp.isoformat(), "ganancia_acumulada": capital_cp - capital_base}
+            )
+
+    return render_template(
+        "recuperacion.html",
+        hoy=hoy,
+        capital_hoy=capital_hoy,
+        tea_lograda=tea_lograda,
+        etiqueta=etiqueta,
+        monto_gasto=monto_gasto,
+        fecha_gasto=fecha_gasto,
+        incluir_movimientos=incluir_movimientos,
+        capital_base=capital_base,
+        fecha_estimada=fecha_estimada,
+        dias_estimados=dias_estimados,
+        ganancia_periodica=ganancia_periodica,
+        horizonte_anios=horizonte_anios,
     )
 
 
