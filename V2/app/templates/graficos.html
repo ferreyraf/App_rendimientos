@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Gráficos</h1>
+
+<div class="kpi-row">
+  <div class="stat-tile">
+    <p class="stat-label">TEA lograda por el rulo</p>
+    <p class="stat-value positivo">{{ tea_rulo|ar }}%</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Promedio TNA nominal de las billeteras activas</p>
+    <p class="stat-value">{{ tna_promedio|ar }}%</p>
+  </div>
+</div>
+
+<section class="chart-card" id="flujo">
+  <div class="flujo-header">
+    <div>
+      <h2>Entradas y salidas por mes</h2>
+      <p class="subtitle">Ingresos y egresos de cada mes (recurrentes + puntuales). Hacé click en una barra o elegí el mes para ver el detalle. Los meses con * son proyectados.</p>
+    </div>
+    <div class="mes-selector">
+      <button type="button" id="mesAnterior" aria-label="Mes anterior">‹</button>
+      <select id="mesSelect" aria-label="Mes">
+        {% for m in flujo_mensual %}
+          <option value="{{ loop.index0 }}" {{ "selected" if m.clave == mes_actual }}>{{ m.nombre }}{{ " *" if m.proyectado }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" id="mesSiguiente" aria-label="Mes siguiente">›</button>
+    </div>
+  </div>
+
+  <div class="flujo-chart-wrap">
+    <canvas id="flujoChart" role="img" aria-label="Ingresos y egresos por mes"></canvas>
+  </div>
+
+  <div class="kpi-row flujo-kpis">
+    <div class="stat-tile">
+      <p class="stat-label">Ingresos · <span data-mes-nombre></span></p>
+      <p class="stat-value" id="kpiIngresos"></p>
+      <p class="stat-delta" id="deltaIngresos"></p>
+    </div>
+    <div class="stat-tile">
+      <p class="stat-label">Egresos · <span data-mes-nombre></span></p>
+      <p class="stat-value" id="kpiEgresos"></p>
+      <p class="stat-delta" id="deltaEgresos"></p>
+    </div>
+    <div class="stat-tile">
+      <p class="stat-label">Saldo del mes (ingresos − egresos)</p>
+      <p class="stat-value" id="kpiNeto"></p>
+      <p class="stat-delta" id="deltaNeto"></p>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <h3>Egresos por categoría</h3>
+      <div id="categoriaWrap" class="categoria-chart-wrap">
+        <canvas id="categoriaChart" role="img" aria-label="Egresos del mes seleccionado por categoría"></canvas>
+      </div>
+      <p class="vacio" id="categoriaVacio" hidden>Sin egresos este mes.</p>
+    </div>
+    <div>
+      <h3>Movimientos del mes</h3>
+      <table class="tabla-movimientos">
+        <thead><tr><th>Concepto</th><th>Categoría</th><th class="num">Monto</th></tr></thead>
+        <tbody id="movimientosBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <details>
+    <summary class="subtitle">Ver todos los meses como tabla</summary>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Mes</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Saldo</th></tr></thead>
+        <tbody>
+          {% for m in flujo_mensual %}
+            <tr>
+              <td>{{ m.nombre }}{% if m.proyectado %} <span class="badge">proyectado</span>{% endif %}</td>
+              <td class="num">${{ m.ingresos|ar }}</td>
+              <td class="num">${{ m.egresos|ar }}</td>
+              <td class="num">${{ (m.ingresos - m.egresos)|ar }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<div class="two-col">
+<section class="chart-card">
+  <h2>Aportes vs. ganancia</h2>
+  <p class="subtitle">Cuánto del capital de hoy es plata que pusiste vos vs. cuánto generó el rulo</p>
+  <canvas id="aportesChart" height="120" role="img" aria-label="Capital aportado vs. ganancia generada, acumulado día a día"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Fecha</th><th>Aportado</th><th>Ganancia</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for point in capital_series %}
+          <tr>
+            <td>{{ point.date }}</td>
+            <td>${{ point.aportado|ar }}</td>
+            <td>${{ point.ganancia|ar }}</td>
+            <td>${{ point.capital_cierre|ar }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
+<section class="chart-card">
+  <h2>Evolución del capital (interés compuesto)</h2>
+  <canvas id="capitalChart" height="120" role="img" aria-label="Evolución del capital de cierre día a día"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Fecha</th><th>Capital de cierre</th></tr></thead>
+      <tbody>
+        {% for point in capital_series %}
+          <tr><td>{{ point.date }}</td><td>${{ point.capital_cierre|ar }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
+<section class="chart-card">
+  <h2>Rendimiento total por billetera</h2>
+  <canvas id="billeteraChart" height="120" role="img" aria-label="Rendimiento total generado por billetera en el período"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Billetera</th><th>Rendimiento total</th></tr></thead>
+      <tbody>
+        {% for item in rendimiento_por_billetera %}
+          <tr><td>{{ item.nombre }}</td><td>${{ item.rendimiento|ar }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
+<section class="chart-card">
+  <h2>Rulo vs. quieto</h2>
+  <p class="subtitle">Capital final si hubieras dejado cada aporte quieto en cada billetera (interés simple, sin rotar), con los mismos gastos e ingresos reales descontados, vs. el resultado real del rulo</p>
+  <canvas id="comparacionChart" height="120" role="img" aria-label="Comparación del capital final del rulo contra dejar el capital quieto en cada billetera"></canvas>
+  <details>
+    <summary class="subtitle">Ver como tabla</summary>
+    <table>
+      <thead><tr><th>Escenario</th><th>Capital final</th></tr></thead>
+      <tbody>
+        {% for item in comparacion %}
+          <tr><td>{{ item.nombre }}</td><td>${{ item.capital_final|ar }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  Chart.defaults.locale = 'es-AR';
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+
+  const ink = token('--text-secondary');
+  const grid = token('--gridline');
+  const seriesBlue = token('--series-1');
+  const neutral = token('--neutral-fill');
+  // Orden categórico fijo (mismo orden que las billeteras en el rulo).
+  const categorical = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--series-${n}`));
+
+  const capitalSeries = {{ capital_series | tojson }};
+  const rendimientoPorBilletera = {{ rendimiento_por_billetera | tojson }};
+  const comparacion = {{ comparacion | tojson }};
+  const flujoMensual = {{ flujo_mensual | tojson }};
+
+  // --- Entradas y salidas por mes ---
+  const colorIngresos = token('--series-2');
+  const colorEgresos = token('--series-8');
+  const fmtAr = (v) => '$' + v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtCorto = (v) => '$' + Math.round(v).toLocaleString('es-AR');
+  const atenuar = (hex) => hex + '55';
+
+  const mesSelect = document.getElementById('mesSelect');
+  let mesSeleccionado = Number(mesSelect.value);
+
+  // El mes elegido va en color pleno y el resto atenuado; la leyenda (sin dataIndex) siempre en pleno.
+  const colorPorMes = (base) => (ctx) =>
+    (ctx.dataIndex === undefined || ctx.dataIndex === mesSeleccionado ? base : atenuar(base));
+
+  const flujoChart = new Chart(document.getElementById('flujoChart'), {
+    type: 'bar',
+    data: {
+      labels: flujoMensual.map((m) => m.corto + (m.proyectado ? '*' : '')),
+      datasets: [
+        { label: 'Ingresos', data: flujoMensual.map((m) => m.ingresos), backgroundColor: colorPorMes(colorIngresos), borderRadius: 4, borderSkipped: 'start' },
+        { label: 'Egresos', data: flujoMensual.map((m) => m.egresos), backgroundColor: colorPorMes(colorEgresos), borderRadius: 4, borderSkipped: 'start' },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      datasets: { bar: { categoryPercentage: 0.7, barPercentage: 0.9 } },
+      scales: {
+        x: { ticks: { color: ink }, grid: { display: false } },
+        y: { ticks: { color: ink, callback: fmtCorto }, grid: { color: grid }, beginAtZero: true },
+      },
+      plugins: {
+        legend: { labels: { color: ink, boxWidth: 12 } },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            title: (items) => flujoMensual[items[0].dataIndex].nombre + (flujoMensual[items[0].dataIndex].proyectado ? ' (proyectado)' : ''),
+            label: (item) => `${item.dataset.label}: ${fmtAr(item.parsed.y)}`,
+            footer: (items) => {
+              const m = flujoMensual[items[0].dataIndex];
+              return `Saldo: ${fmtAr(m.ingresos - m.egresos)}`;
+            },
+          },
+        },
+      },
+      interaction: { mode: 'index', intersect: false },
+      onClick: (_evt, elements) => {
+        if (elements.length) seleccionarMes(elements[0].index);
+      },
+      onHover: (evt, elements) => {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
+    },
+  });
+
+  const categoriaChart = new Chart(document.getElementById('categoriaChart'), {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Egresos', data: [], backgroundColor: colorEgresos, borderRadius: 4, borderSkipped: 'start' }] },
+    options: {
+      indexAxis: 'y',
+      maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: ink, callback: fmtCorto, maxTicksLimit: 5 }, grid: { color: grid }, beginAtZero: true },
+        y: { ticks: { color: ink, autoSkip: false }, grid: { display: false } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (item) => fmtAr(item.parsed.x) } },
+      },
+    },
+  });
+
+  function delta(actual, anterior, nombreAnterior) {
+    if (anterior === undefined) return '';
+    if (anterior === 0) return actual === 0 ? `Igual que ${nombreAnterior}` : `Sin movimientos en ${nombreAnterior}`;
+    const pct = ((actual - anterior) / Math.abs(anterior)) * 100;
+    const flecha = pct > 0 ? '▲' : pct < 0 ? '▼' : '=';
+    return `${flecha} ${Math.abs(pct).toLocaleString('es-AR', { maximumFractionDigits: 1 })}% vs ${nombreAnterior} (${fmtAr(anterior)})`;
+  }
+
+  function deltaAbsoluto(actual, anterior, nombreAnterior) {
+    const diff = actual - anterior;
+    const flecha = diff > 0 ? '▲' : diff < 0 ? '▼' : '=';
+    return `${flecha} ${fmtAr(Math.abs(diff))} vs ${nombreAnterior} (${fmtAr(anterior)})`;
+  }
+
+  function escapar(texto) {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  function seleccionarMes(idx) {
+    mesSeleccionado = Math.max(0, Math.min(flujoMensual.length - 1, idx));
+    mesSelect.value = String(mesSeleccionado);
+    document.getElementById('mesAnterior').disabled = mesSeleccionado === 0;
+    document.getElementById('mesSiguiente').disabled = mesSeleccionado === flujoMensual.length - 1;
+
+    const m = flujoMensual[mesSeleccionado];
+    const prev = flujoMensual[mesSeleccionado - 1];
+    const neto = m.ingresos - m.egresos;
+
+    document.querySelectorAll('[data-mes-nombre]').forEach((el) => {
+      el.textContent = m.nombre + (m.proyectado ? ' (proyectado)' : '');
+    });
+    document.getElementById('kpiIngresos').textContent = fmtAr(m.ingresos);
+    document.getElementById('kpiEgresos').textContent = fmtAr(m.egresos);
+    const kpiNeto = document.getElementById('kpiNeto');
+    kpiNeto.textContent = fmtAr(neto);
+    kpiNeto.className = 'stat-value ' + (neto >= 0 ? 'positivo' : 'negativo');
+    document.getElementById('deltaIngresos').textContent = prev ? delta(m.ingresos, prev.ingresos, prev.nombre) : '';
+    document.getElementById('deltaEgresos').textContent = prev ? delta(m.egresos, prev.egresos, prev.nombre) : '';
+    document.getElementById('deltaNeto').textContent = prev ? deltaAbsoluto(neto, prev.ingresos - prev.egresos, prev.nombre) : '';
+
+    const hayEgresos = m.categorias.length > 0;
+    document.getElementById('categoriaWrap').hidden = !hayEgresos;
+    document.getElementById('categoriaVacio').hidden = hayEgresos;
+    document.getElementById('categoriaWrap').style.height = `${m.categorias.length * 30 + 40}px`;
+    categoriaChart.data.labels = m.categorias.map((c) => c.nombre);
+    categoriaChart.data.datasets[0].data = m.categorias.map((c) => c.monto);
+    categoriaChart.resize();
+    categoriaChart.update();
+
+    const filas = [
+      ...m.detalle_ingresos.map((x) => `<tr><td><span class="dot" style="background:${colorIngresos}"></span>${escapar(x.etiqueta)}</td><td>Ingreso</td><td class="num">+${fmtAr(x.monto)}</td></tr>`),
+      ...m.detalle_egresos
+        .slice()
+        .sort((a, b) => b.monto - a.monto)
+        .map((x) => `<tr><td><span class="dot" style="background:${colorEgresos}"></span>${escapar(x.etiqueta)}</td><td>${escapar(x.categoria)}</td><td class="num">−${fmtAr(x.monto)}</td></tr>`),
+    ];
+    document.getElementById('movimientosBody').innerHTML =
+      filas.join('') || '<tr><td colspan="3" class="vacio">Sin movimientos este mes.</td></tr>';
+
+    flujoChart.update();
+  }
+
+  mesSelect.addEventListener('change', () => seleccionarMes(Number(mesSelect.value)));
+  document.getElementById('mesAnterior').addEventListener('click', () => seleccionarMes(mesSeleccionado - 1));
+  document.getElementById('mesSiguiente').addEventListener('click', () => seleccionarMes(mesSeleccionado + 1));
+  seleccionarMes(mesSeleccionado);
+
+  new Chart(document.getElementById('aportesChart'), {
+    type: 'line',
+    data: {
+      labels: capitalSeries.map(p => p.date),
+      datasets: [
+        {
+          label: 'Aportado',
+          data: capitalSeries.map(p => p.aportado),
+          borderColor: categorical[0],
+          backgroundColor: categorical[0],
+          fill: 'origin',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.15,
+        },
+        {
+          label: 'Ganancia generada',
+          data: capitalSeries.map(p => p.aportado + p.ganancia),
+          borderColor: categorical[1],
+          backgroundColor: categorical[1],
+          fill: '-1',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.15,
+        },
+      ],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink, maxTicksLimit: 10 }, grid: { color: grid } },
+        y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { labels: { color: ink } },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      interaction: { mode: 'index', intersect: false },
+    },
+  });
+
+  new Chart(document.getElementById('capitalChart'), {
+    type: 'line',
+    data: {
+      labels: capitalSeries.map(p => p.date),
+      datasets: [{
+        label: 'Capital de cierre',
+        data: capitalSeries.map(p => p.capital_cierre),
+        borderColor: seriesBlue,
+        backgroundColor: seriesBlue,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.15,
+      }],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink, maxTicksLimit: 10 }, grid: { color: grid } },
+        y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      interaction: { mode: 'index', intersect: false },
+    },
+  });
+
+  new Chart(document.getElementById('billeteraChart'), {
+    type: 'bar',
+    data: {
+      labels: rendimientoPorBilletera.map(item => item.nombre),
+      datasets: [{
+        label: 'Rendimiento total',
+        data: rendimientoPorBilletera.map(item => item.rendimiento),
+        backgroundColor: rendimientoPorBilletera.map((_, i) => categorical[i % categorical.length]),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink }, grid: { display: false } },
+        y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'nearest', intersect: true },
+      },
+    },
+  });
+
+  new Chart(document.getElementById('comparacionChart'), {
+    type: 'bar',
+    data: {
+      labels: comparacion.map(item => item.nombre),
+      datasets: [{
+        label: 'Capital final',
+        data: comparacion.map(item => item.capital_final),
+        backgroundColor: comparacion.map(item => item.nombre === 'Rulo (real)' ? seriesBlue : neutral),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: ink }, grid: { display: false } },
+        y: { ticks: { color: ink }, grid: { color: grid }, beginAtZero: false },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'nearest', intersect: true },
+      },
+    },
+  });
+</script>
+{% endblock %}

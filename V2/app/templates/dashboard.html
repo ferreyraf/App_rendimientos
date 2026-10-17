@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ hoy.strftime("%d/%m/%Y") }}</h1>
+<p class="subtitle">Capturas de hoy, calculadas por la simulación del rulo</p>
+
+<div class="kpi-row">
+  <div class="stat-tile">
+    <p class="stat-label">Patrimonio total (rulo + <a href="{{ url_for('main.patrimonio') }}">inversiones</a>)</p>
+    <p class="stat-value">${{ patrimonio_total|ar }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Ganancia neta acumulada</p>
+    <p class="stat-value {{ 'positivo' if ganancia_neta >= 0 else 'negativo' }}">${{ ganancia_neta|ar }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">TEA lograda por el rulo</p>
+    <p class="stat-value">{{ tea_lograda|ar }}%</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Ganancia extra por rotar vs. la mejor billetera quieta</p>
+    <p class="stat-value {{ 'positivo' if ventaja_rulo >= 0 else 'negativo' }}">${{ ventaja_rulo|ar }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Total aportado</p>
+    <p class="stat-value">${{ total_aportado|ar }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Total ingresos (sueldo y otros)</p>
+    <p class="stat-value positivo">${{ total_ingresos|ar }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Total egresos</p>
+    <p class="stat-value negativo">${{ total_egresos|ar }}</p>
+  </div>
+</div>
+
+<section class="chart-card">
+  <p class="subtitle">Vencimiento de impuestos</p>
+  <p class="total">
+    Próximo vencimiento: <strong>{{ vencimiento.strftime("%d/%m/%Y") }}</strong>
+    — faltan <strong>{{ dias_para_vencimiento }} día(s)</strong>
+  </p>
+</section>
+
+<div class="two-col">
+  <section class="chart-card">
+    <h2>Ingresos vs. egresos (mes actual)</h2>
+    <div class="pie-chart-wrap">
+      <canvas id="ingresosEgresosChart" role="img" aria-label="Ingresos vs. egresos del mes actual"></canvas>
+    </div>
+    <details>
+      <summary class="subtitle">Ver como tabla</summary>
+      <table>
+        <thead><tr><th></th><th>Monto</th></tr></thead>
+        <tbody>
+          <tr><td>Ingresos</td><td>${{ total_ingresos_mes|ar }}</td></tr>
+          <tr><td>Egresos</td><td>${{ total_egresos_mes|ar }}</td></tr>
+        </tbody>
+      </table>
+    </details>
+  </section>
+
+  <section class="chart-card">
+    <h2>Egresos por categoría (mes actual)</h2>
+    {% if egresos_por_categoria %}
+    <div class="pie-chart-wrap">
+      <canvas id="categoriasChart" role="img" aria-label="Egresos del mes actual agrupados por categoría"></canvas>
+    </div>
+    <details>
+      <summary class="subtitle">Ver como tabla</summary>
+      <table>
+        <thead><tr><th>Categoría</th><th>Monto</th></tr></thead>
+        <tbody>
+          {% for item in egresos_por_categoria %}
+            <tr><td>{{ item.categoria }}</td><td>${{ item.monto|ar }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% else %}
+    <p class="subtitle">No hay egresos cargados para este mes.</p>
+    {% endif %}
+  </section>
+</div>
+
+{% if actual or proxima %}
+<div class="two-col">
+  {% if actual %}
+  <section class="chart-card">
+    <p class="subtitle">Liquidez</p>
+    <p class="total">
+      Tu dinero está ahora en <strong>{{ actual.wallet_name }}</strong>
+      (desde las {{ actual.timestamp.strftime("%H:%M") }}{% if actual.timestamp.date() != hoy %} del {{ actual.timestamp.strftime("%d/%m") }}{% endif %})
+    </p>
+  </section>
+  {% endif %}
+
+  {% if proxima %}
+  <section class="chart-card">
+    <p class="subtitle">Próxima acción</p>
+    <p class="total">
+      Mover a <strong>{{ proxima.wallet_name }}</strong> a las {{ proxima.timestamp.strftime("%H:%M") }}
+      {% if proxima.timestamp.date() != hoy %}({{ proxima.timestamp.strftime("%d/%m") }}){% endif %}
+      — en <strong>{{ proxima.horas }}h {{ proxima.minutos }}min</strong>
+    </p>
+  </section>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if summary %}
+<table>
+  <thead>
+    <tr>
+      <th>Hora</th>
+      <th>Billetera</th>
+      <th>Monto capturado</th>
+      <th>TNA</th>
+      <th>Rendimiento</th>
+      <th>Estado</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in summary.captures %}
+    <tr class="{{ 'row-pendiente' if c.timestamp > ahora }}">
+      <td>{{ c.timestamp.strftime("%H:%M") }}</td>
+      <td>{{ c.wallet_name }}</td>
+      <td>${{ c.monto_capturado|ar }}</td>
+      <td>{{ c.tna|ar }}%</td>
+      <td>
+        ${{ c.rendimiento|ar }}
+        {% if c.dias_acumulados > 1 %}<span class="badge">acredita ×{{ c.dias_acumulados }} el próximo día hábil (incluye fin de semana)</span>{% endif %}
+        {% if c.limitado %}<span class="badge badge-warning">limitado por piso/techo</span>{% endif %}
+      </td>
+      <td>{% if c.timestamp > ahora %}<span class="badge">pendiente</span>{% else %}listo{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6">Ninguna billetera captura hoy.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if summary.ingresos or summary.egresos %}
+<p class="total">
+  {% for m in summary.ingresos %}<span class="badge">+${{ m.monto|ar }} {{ m.etiqueta }}</span>{% endfor %}
+  {% for m in summary.egresos %}<span class="badge badge-warning">-${{ m.monto|ar }} {{ m.etiqueta }}</span>{% endfor %}
+</p>
+{% endif %}
+
+<p class="total">Rendimiento generado hoy: <strong>${{ summary.rendimiento_generado|ar }}</strong></p>
+<p class="total">Rendimiento acreditado hoy: <strong>${{ summary.rendimiento_acreditado|ar }}</strong></p>
+<p class="total">Capital de cierre: <strong>${{ summary.capital_cierre|ar }}</strong></p>
+{% else %}
+<p class="subtitle">Todavía no hay datos para hoy.</p>
+{% endif %}
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+  const ink = token('--text-secondary');
+  const categorical = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--series-${n}`));
+
+  new Chart(document.getElementById('ingresosEgresosChart'), {
+    type: 'pie',
+    data: {
+      labels: ['Ingresos', 'Egresos'],
+      datasets: [{
+        data: [{{ total_ingresos_mes }}, {{ total_egresos_mes }}],
+        backgroundColor: [token('--series-2'), token('--series-8')],
+      }],
+    },
+    options: {
+      plugins: { legend: { labels: { color: ink } } },
+    },
+  });
+
+  {% if egresos_por_categoria %}
+  const categoriasData = {{ egresos_por_categoria | tojson }};
+  new Chart(document.getElementById('categoriasChart'), {
+    type: 'pie',
+    data: {
+      labels: categoriasData.map((c) => c.categoria),
+      datasets: [{
+        data: categoriasData.map((c) => c.monto),
+        backgroundColor: categoriasData.map((_, i) => categorical[i % categorical.length]),
+      }],
+    },
+    options: {
+      plugins: { legend: { labels: { color: ink } } },
+    },
+  });
+  {% endif %}
+</script>
+{% endblock %}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ app_name }}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='icono.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    (function () {
+      var tema = localStorage.getItem("theme");
+      if (tema === "light" || tema === "dark") {
+        document.documentElement.dataset.theme = tema;
+      }
+    })();
+  </script>
+</head>
+<body>
+  <nav>
+    <a class="brand" href="{{ url_for('main.dashboard') }}">
+      <img src="{{ url_for('static', filename='icono.png') }}" alt="" width="22" height="22">
+      <span>{{ app_name }}</span>
+      <span class="version-badge" title="Versión {{ app_version }}">v{{ app_version }}</span>
+    </a>
+    <button type="button" class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="nav-links">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="nav-links" id="nav-links">
+      <a href="{{ url_for('main.dashboard') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.dashboard' }}>Dashboard</a>
+      <a href="{{ url_for('main.historial') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.historial' }}>Historial</a>
+      <a href="{{ url_for('main.graficos') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.graficos' }}>Gráficos</a>
+      <a href="{{ url_for('main.proyeccion') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.proyeccion' }}>Proyección</a>
+      <a href="{{ url_for('main.calculadora') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.calculadora' }}>Calculadora</a>
+      <a href="{{ url_for('main.recuperacion') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.recuperacion' }}>Recuperación</a>
+      <a href="{{ url_for('main.patrimonio') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.patrimonio' }}>Patrimonio</a>
+      <a href="{{ url_for('main.configuracion') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.configuracion' }}>Configuración</a>
+      <a href="{{ url_for('main.acerca') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.acerca' }}>Acerca de</a>
+    </div>
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambiar tema claro/oscuro" title="Cambiar tema claro/oscuro">
+      <span class="theme-toggle-icon" aria-hidden="true">◐</span>
+    </button>
+  </nav>
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-list">
+          {% for category, message in messages %}
+            <p class="flash flash-{{ category }}">
+              <span>{{ message }}</span>
+              <button type="button" class="flash-close" aria-label="Cerrar mensaje">&times;</button>
+            </p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

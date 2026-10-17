@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=@APP_NAME@
+Comment=@DESCRIPTION@
+Exec=@EXEC@
+Icon=rulo-financiero
+Terminal=false
+Categories=Office;Finance;
+Keywords=finanzas;gastos;rulo;billeteras;inflación;

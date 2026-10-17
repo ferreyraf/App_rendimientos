@@ -1,0 +1,448 @@
+{% extends "base.html" %}
+
+{% macro campos_aumento(tipo, id, m) %}
+  <div class="campo-aumento dia-mes-field" {{ "hidden" if not m.recurrente }}>
+    <input type="number" form="{{ tipo }}-{{ id }}" name="aumento_pct" class="input-xs" step="0.01" min="0" placeholder="%" value="{{ m.aumento_pct or '' }}" aria-label="Aumento %">
+    <span>% cada</span>
+    <input type="number" form="{{ tipo }}-{{ id }}" name="aumento_periodo_meses" class="input-xs" min="1" value="{{ m.aumento_periodo_meses or 4 }}" aria-label="Cada cuántos meses">
+    <span>meses desde</span>
+    <input type="date" form="{{ tipo }}-{{ id }}" name="aumento_inicio" title="Desde cuándo se cuenta el aumento" value="{{ m.aumento_inicio.isoformat() if m.aumento_inicio else '' }}">
+  </div>
+{% endmacro %}
+
+{% macro select_categoria(actual, attrs) %}
+  <select name="categoria" {{ attrs }}>
+    <option value="" {{ "selected" if not actual }}>Sin categoría</option>
+    {% for cat in categorias_existentes %}
+      <option value="{{ cat }}" {{ "selected" if cat == actual }}>{{ cat }}</option>
+    {% endfor %}
+  </select>
+{% endmacro %}
+
+{% macro select_moneda(actual, attrs) %}
+  <select name="moneda" class="select-moneda" {{ attrs }}>
+    <option value="ARS" {{ "selected" if actual != "USD" }}>$</option>
+    <option value="USD" {{ "selected" if actual == "USD" }}>US$</option>
+  </select>
+{% endmacro %}
+
+{% macro fila_movimiento(tipo, id, m, con_categoria, columna_aumento) %}
+  <tr>
+    <td><input type="text" form="{{ tipo }}-{{ id }}" name="etiqueta" value="{{ m.etiqueta }}" required></td>
+    {% if con_categoria %}
+      <td>{{ select_categoria(m.categoria, 'form="' ~ tipo ~ '-' ~ id ~ '" aria-label="Categoría"') }}</td>
+    {% endif %}
+    <td>
+      <div class="campo-monto">
+        {{ select_moneda(m.moneda, 'form="' ~ tipo ~ '-' ~ id ~ '" aria-label="Moneda"') }}
+        <input type="number" step="0.01" min="0.01" form="{{ tipo }}-{{ id }}" name="monto" value="{{ m.monto }}" required>
+      </div>
+      {% if m.moneda == "USD" %}
+        <span class="equivalente">{% if m.cotizacion %}≈ ${{ m.monto_en_pesos|ar }}{% else %}sin cotización{% endif %}</span>
+      {% endif %}
+    </td>
+    <td>
+      <div class="campo-cuando">
+        <label class="check"><input type="checkbox" form="{{ tipo }}-{{ id }}" name="recurrente" onchange="toggleRecurrente(this)" {{ "checked" if m.recurrente }}> mensual</label>
+        <input type="date" form="{{ tipo }}-{{ id }}" name="fecha" class="fecha-field" value="{{ m.fecha.isoformat() if m.fecha else '' }}" {{ "hidden" if m.recurrente }}>
+        <label class="check dia-mes-field" {{ "hidden" if not m.recurrente }}>día <input type="number" form="{{ tipo }}-{{ id }}" name="dia_mes" class="input-xs" min="1" max="31" placeholder="1-31" value="{{ m.dia_mes or '' }}"></label>
+        <label class="check dia-mes-field" {{ "hidden" if not m.recurrente }}><input type="checkbox" form="{{ tipo }}-{{ id }}" name="dia_habil" {{ "checked" if m.dia_habil }}> hábil</label>
+        <label class="check dia-mes-field" {{ "hidden" if not m.recurrente }}>desde <input type="date" form="{{ tipo }}-{{ id }}" name="desde" value="{{ m.fecha.isoformat() if m.recurrente and m.fecha else '' }}" title="Opcional: desde cuándo corre (vacío = siempre)"></label>
+      </div>
+      {% if not columna_aumento %}{{ campos_aumento(tipo, id, m) }}{% endif %}
+    </td>
+    {% if columna_aumento %}
+      <td>{{ campos_aumento(tipo, id, m) }}</td>
+    {% endif %}
+    <td class="acciones">
+      <button type="submit" form="{{ tipo }}-{{ id }}" formaction="{{ url_for('main.editar_' ~ tipo, **{tipo ~ '_id': id}) }}">Guardar</button>
+      <button type="submit" class="btn-danger" form="{{ tipo }}-{{ id }}" formaction="{{ url_for('main.eliminar_' ~ tipo, **{tipo ~ '_id': id}) }}">Eliminar</button>
+      <form id="{{ tipo }}-{{ id }}" method="post"></form>
+    </td>
+  </tr>
+{% endmacro %}
+
+{% macro tabla_movimientos(tipo, items, con_categoria, columna_aumento) %}
+  <div class="table-scroll">
+    <table class="tabla-config">
+      <thead>
+        <tr>
+          <th>Etiqueta</th>
+          {% if con_categoria %}<th>Categoría</th>{% endif %}
+          <th>Monto</th>
+          <th>Cuándo</th>
+          {% if columna_aumento %}<th>Aumento periódico</th>{% endif %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for id, m in items %}
+          {{ fila_movimiento(tipo, id, m, con_categoria, columna_aumento) }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endmacro %}
+
+{% macro listado_movimientos(tipo, grupos, con_categoria, plural) %}
+  <section class="chart-card grupo-mes grupo-recurrentes">
+    <div class="grupo-header">
+      <h3>Todos los meses <span class="badge">{{ grupos.recurrentes|length }}</span></h3>
+      <span class="grupo-total">${{ grupos.total_recurrentes|ar }} / mes</span>
+    </div>
+    {% if grupos.recurrentes %}
+      {{ tabla_movimientos(tipo, grupos.recurrentes, con_categoria, true) }}
+    {% else %}
+      <p class="vacio">No hay {{ plural }} recurrentes.</p>
+    {% endif %}
+  </section>
+
+  {% for mes in grupos.meses %}
+    <details class="chart-card grupo-mes" {{ "open" if mes.abierto }}>
+      <summary class="day-summary">
+        <span>
+          {{ mes.nombre }}
+          {% if mes.actual %}<span class="badge badge-actual">mes actual</span>{% endif %}
+          <span class="badge">{{ mes.movimientos|length }}</span>
+        </span>
+        <span class="day-summary-figures">
+          Puntuales <strong>${{ mes.subtotal|ar }}</strong>
+          · Total del mes <strong>${{ mes.total_mes|ar }}</strong>
+        </span>
+      </summary>
+      {{ tabla_movimientos(tipo, mes.movimientos, con_categoria, false) }}
+    </details>
+  {% else %}
+    <p class="vacio">No hay {{ plural }} puntuales cargados.</p>
+  {% endfor %}
+{% endmacro %}
+
+{% macro form_agregar(tipo, titulo, ej_etiqueta, ej_aumento, ej_periodo, con_categoria) %}
+  <section class="chart-card form-card">
+    <h3>{{ titulo }}</h3>
+    <form method="post" action="{{ url_for('main.agregar_' ~ tipo) }}" class="config-form">
+      <label for="{{ tipo }}_etiqueta">Etiqueta</label>
+      <input type="text" id="{{ tipo }}_etiqueta" name="etiqueta" placeholder="{{ ej_etiqueta }}" required>
+
+      {% if con_categoria %}
+        <label for="{{ tipo }}_categoria">Categoría</label>
+        {{ select_categoria("", 'id="' ~ tipo ~ '_categoria"') }}
+      {% endif %}
+
+      <label for="{{ tipo }}_monto">Monto</label>
+      <div class="campo-monto">
+        {{ select_moneda("ARS", 'aria-label="Moneda"') }}
+        <input type="number" step="0.01" min="0.01" id="{{ tipo }}_monto" name="monto" required>
+      </div>
+
+      <label class="check"><input type="checkbox" name="recurrente" onchange="toggleRecurrente(this)"> Se repite todos los meses</label>
+
+      <label for="{{ tipo }}_fecha" class="fecha-field">Fecha</label>
+      <input type="date" id="{{ tipo }}_fecha" name="fecha" class="fecha-field">
+
+      <label for="{{ tipo }}_dia_mes" class="dia-mes-field" hidden>Día del mes</label>
+      <input type="number" id="{{ tipo }}_dia_mes" name="dia_mes" class="dia-mes-field" min="1" max="31" hidden>
+
+      <label class="check dia-mes-field" hidden><input type="checkbox" name="dia_habil"> Es día hábil (salta fines de semana)</label>
+
+      <label for="{{ tipo }}_desde" class="dia-mes-field" hidden>Desde (opcional, vacío = desde siempre)</label>
+      <input type="date" id="{{ tipo }}_desde" name="desde" class="dia-mes-field" hidden>
+
+      <fieldset class="dia-mes-field" hidden>
+        <legend>Aumento periódico (opcional)</legend>
+        <label for="{{ tipo }}_aumento_pct">Porcentaje</label>
+        <input type="number" id="{{ tipo }}_aumento_pct" name="aumento_pct" step="0.01" min="0" placeholder="Ej. {{ ej_aumento }}">
+
+        <label for="{{ tipo }}_aumento_periodo_meses">Cada cuántos meses</label>
+        <input type="number" id="{{ tipo }}_aumento_periodo_meses" name="aumento_periodo_meses" min="1" placeholder="Ej. {{ ej_periodo }}">
+
+        <label for="{{ tipo }}_aumento_inicio">Desde cuándo se cuenta</label>
+        <input type="date" id="{{ tipo }}_aumento_inicio" name="aumento_inicio">
+      </fieldset>
+
+      <button type="submit">Agregar</button>
+    </form>
+  </section>
+{% endmacro %}
+
+{% block content %}
+<h1>Configuración</h1>
+
+<nav class="section-nav" aria-label="Secciones">
+  <a href="#aportes">Aportes</a>
+  <a href="#egresos">Egresos</a>
+  <a href="#ingresos">Ingresos</a>
+  <a href="#ajustes">Ajustes por inflación</a>
+  <a href="#billeteras">Billeteras</a>
+</nav>
+
+<section id="cotizacion" class="chart-card cotizacion-card">
+  <div>
+    <span class="stat-label">Dólar Blue en Córdoba · venta</span>
+    {% if cotizacion_usd %}
+      <strong>${{ cotizacion_usd.valor|ar }}</strong>
+      <span class="subtitle">infodolar, publicado {{ cotizacion_usd.publicado.strftime("%d/%m %H:%M") }} · consultado {{ cotizacion_usd.actualizado.strftime("%d/%m %H:%M") }}. Pasa a pesos lo que cargues en US$ y se actualiza solo cada 6 horas.</span>
+    {% else %}
+      <strong>Sin cotización</strong>
+      <span class="subtitle">Se consulta a infodolar la primera vez que cargues algo en US$.</span>
+    {% endif %}
+  </div>
+  <form method="post" action="{{ url_for('main.actualizar_cotizacion') }}">
+    <button type="submit" class="btn-secondary">Actualizar</button>
+  </form>
+</section>
+
+<section id="aportes" class="config-section">
+  <div class="section-header">
+    <div>
+      <h2>Aportes</h2>
+      <p class="subtitle">Capital incorporado al rulo — el primer aporte marca el arranque de la simulación</p>
+    </div>
+    <div class="section-stats">
+      <div class="mini-stat"><span>Total aportado</span><strong>${{ total_aportes|ar }}</strong></div>
+    </div>
+  </div>
+
+  <div class="config-layout">
+    <section class="chart-card">
+      <div class="table-scroll">
+        <table class="tabla-config">
+          <thead>
+            <tr><th>Fecha</th><th>Monto</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for id, fecha, monto in aportes %}
+              <tr>
+                <td><input type="date" form="aporte-{{ id }}" name="fecha" value="{{ fecha.isoformat() }}" required></td>
+                <td><input type="number" step="0.01" min="0.01" form="aporte-{{ id }}" name="monto" value="{{ monto }}" required></td>
+                <td class="acciones">
+                  <button type="submit" form="aporte-{{ id }}" formaction="{{ url_for('main.editar_aporte', aporte_id=id) }}">Guardar</button>
+                  <button type="submit" class="btn-danger" form="aporte-{{ id }}" formaction="{{ url_for('main.eliminar_aporte', aporte_id=id) }}">Eliminar</button>
+                  <form id="aporte-{{ id }}" method="post"></form>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="3" class="vacio">Todavía no cargaste ningún aporte.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="chart-card form-card">
+      <h3>Agregar aporte</h3>
+      <form method="post" class="config-form">
+        <label for="monto">Monto</label>
+        <input type="number" step="0.01" min="0.01" id="monto" name="monto" required>
+
+        <label for="fecha">Fecha</label>
+        <input type="date" id="fecha" name="fecha" required>
+
+        <button type="submit">Agregar</button>
+      </form>
+    </section>
+  </div>
+</section>
+
+<section id="egresos" class="config-section">
+  <div class="section-header">
+    <div>
+      <h2>Egresos</h2>
+      <p class="subtitle">Los recurrentes se repiten todos los meses (con aumento periódico opcional, ej. alquiler 11% cada 4 meses); los puntuales se agrupan según el mes en que caen.</p>
+    </div>
+    <div class="section-stats">
+      <div class="mini-stat"><span>Recurrentes</span><strong>${{ egresos.total_recurrentes|ar }}<small> / mes</small></strong></div>
+      <div class="mini-stat"><span>{{ egresos.mes_actual_nombre }}</span><strong class="negativo">${{ egresos.total_mes_actual|ar }}</strong></div>
+    </div>
+  </div>
+
+  <div class="config-layout">
+    <div>
+      {{ listado_movimientos("egreso", egresos, true, "egresos") }}
+    </div>
+    {{ form_agregar("egreso", "Agregar egreso", "Ej. Alquiler, Tarjeta, Impuesto", 11, 4, true) }}
+  </div>
+</section>
+
+<section id="ingresos" class="config-section">
+  <div class="section-header">
+    <div>
+      <h2>Ingresos</h2>
+      <p class="subtitle">Sueldo y otros ingresos, con la misma lógica de recurrencia que los egresos — incluido el aumento periódico (ej. 2% cada 3 meses).</p>
+    </div>
+    <div class="section-stats">
+      <div class="mini-stat"><span>Recurrentes</span><strong>${{ ingresos.total_recurrentes|ar }}<small> / mes</small></strong></div>
+      <div class="mini-stat"><span>{{ ingresos.mes_actual_nombre }}</span><strong class="positivo">${{ ingresos.total_mes_actual|ar }}</strong></div>
+    </div>
+  </div>
+
+  <div class="config-layout">
+    <div>
+      {{ listado_movimientos("ingreso", ingresos, false, "ingresos") }}
+    </div>
+    {{ form_agregar("ingreso", "Agregar ingreso", "Ej. Sueldo, Freelance", 2, 3, false) }}
+  </div>
+</section>
+
+<section id="ajustes" class="config-section">
+  <h2>Ajustes por inflación</h2>
+  <p class="subtitle">Para cada gasto o ingreso con aumento periódico (ej. alquiler cada 4 meses), cargá el % real cuando se conozca. Los ajustes sin dato usan el % estimado. La sugerencia es la inflación (IPC INDEC) acumulada de los meses previos al ajuste.</p>
+
+  {% for a in ajustes %}
+    <section class="chart-card ajuste-card">
+      <div class="grupo-header">
+        <h3>{{ a.mov.etiqueta }} <span class="badge">{{ a.tipo }}</span></h3>
+        <span class="grupo-total">Hoy ${{ a.monto_hoy|ar }} / mes</span>
+      </div>
+      <p class="subtitle ajuste-meta">
+        Base ${{ a.mov.monto|ar }} desde {{ a.mov.aumento_inicio.strftime("%d/%m/%Y") }}
+        · ajusta cada {{ a.mov.aumento_periodo_meses }} meses
+        · estimado {{ a.mov.aumento_pct|ar }}% por ajuste
+      </p>
+      {% if a.calendario %}
+        <div class="table-scroll">
+          <table class="tabla-config">
+            <thead>
+              <tr>
+                <th>Ajuste</th>
+                <th>% aplicado</th>
+                <th>Sugerido por IPC</th>
+                <th class="num">Monto desde ese mes</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for aj in a.calendario %}
+                {% set form_id = "ajuste-" ~ a.tipo ~ "-" ~ a.id ~ "-" ~ aj.fecha.isoformat() %}
+                <tr>
+                  <td>
+                    {{ aj.nombre_mes }}
+                    {% if aj.real %}<span class="badge badge-real">real</span>{% else %}<span class="badge">estimado</span>{% endif %}
+                  </td>
+                  <td>
+                    <input type="text" inputmode="decimal" form="{{ form_id }}" name="pct" class="input-pct" value="{{ aj.pct|ar if aj.real else '' }}" placeholder="{{ aj.pct|ar }}" required aria-label="% del ajuste de {{ aj.nombre_mes }}"> %
+                  </td>
+                  <td>
+                    <span class="ipc-sugerido" data-mes="{{ aj.fecha.strftime('%Y-%m') }}" data-periodo="{{ a.mov.aumento_periodo_meses }}">…</span>
+                    <button type="button" class="btn-secondary btn-usar-ipc" data-form="{{ form_id }}" hidden>Usar</button>
+                  </td>
+                  <td class="num">${{ aj.monto|ar }}</td>
+                  <td class="acciones">
+                    <button type="submit" form="{{ form_id }}">Guardar</button>
+                    {% if aj.real %}
+                      <button type="submit" class="btn-secondary" form="{{ form_id }}" formnovalidate formaction="{{ url_for('main.eliminar_ajuste', tipo=a.tipo, mov_id=a.id, fecha=aj.fecha.isoformat()) }}">Volver a estimado</button>
+                    {% endif %}
+                    <form id="{{ form_id }}" method="post" action="{{ url_for('main.guardar_ajuste', tipo=a.tipo, mov_id=a.id) }}">
+                      <input type="hidden" name="fecha" value="{{ aj.fecha.isoformat() }}">
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="vacio">Todavía no hay ajustes en los próximos 12 meses.</p>
+      {% endif %}
+    </section>
+  {% else %}
+    <p class="vacio">Ningún gasto o ingreso recurrente tiene aumento periódico. Configurá en la tabla de arriba un % estimado, "cada cuántos meses" y "desde cuándo" para cargar acá el % real de cada ajuste.</p>
+  {% endfor %}
+</section>
+
+<script>
+  (function () {
+    const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    const fmtPct = (v) => v.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const nombreMes = (clave) => {
+      const [anio, mes] = clave.split("-");
+      return `${MESES_CORTOS[Number(mes) - 1]} ${anio.slice(2)}`;
+    };
+
+    // Inflación acumulada de los `periodo` meses publicados anteriores al mes del ajuste.
+    function sugerencia(meses, mesAjuste, periodo) {
+      const previos = meses.filter((m) => m.mes < mesAjuste);
+      if (previos.length < periodo) return null;
+      const usados = previos.slice(-periodo);
+      const acumulado = usados.reduce((acc, m) => acc * (1 + m.valor / 100), 1);
+      return { pct: (acumulado - 1) * 100, desde: usados[0].mes, hasta: usados[usados.length - 1].mes };
+    }
+
+    const celdas = document.querySelectorAll(".ipc-sugerido");
+    if (!celdas.length) return;
+
+    fetch("{{ url_for('main.api_ipc') }}")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(({ meses }) => {
+        celdas.forEach((celda) => {
+          const s = sugerencia(meses, celda.dataset.mes, Number(celda.dataset.periodo));
+          if (!s) { celda.textContent = "—"; return; }
+          const pct = Math.round(s.pct * 100) / 100;
+          celda.textContent = `${fmtPct(pct)}% (${nombreMes(s.desde)}–${nombreMes(s.hasta)})`;
+          celda.title = "IPC INDEC acumulado de esos meses";
+          const boton = celda.nextElementSibling;
+          boton.hidden = false;
+          boton.addEventListener("click", () => {
+            const input = document.querySelector(`input[name="pct"][form="${boton.dataset.form}"]`);
+            input.value = fmtPct(pct);
+            input.focus();
+          });
+        });
+      })
+      .catch(() => {
+        celdas.forEach((celda) => {
+          celda.textContent = "Sin conexión";
+          celda.title = "No se pudo consultar el IPC";
+        });
+      });
+  })();
+
+  function toggleRecurrente(checkbox) {
+    const scope = checkbox.closest("tr") || checkbox.closest("form");
+    const fecha = scope.querySelectorAll(".fecha-field");
+    const diaMes = scope.querySelectorAll(".dia-mes-field");
+    fecha.forEach((el) => { el.hidden = checkbox.checked; });
+    diaMes.forEach((el) => { el.hidden = !checkbox.checked; });
+  }
+</script>
+
+<section id="billeteras" class="config-section">
+  <h2>Billeteras</h2>
+  <p class="subtitle">Ajustá tasa y horarios cuando la billetera los cambie</p>
+
+  <div class="table-scroll">
+    <table>
+    <thead>
+      <tr>
+        <th>Billetera</th>
+        <th>Días activos</th>
+        <th>Horarios y TNA</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for w in wallets %}
+      <tr class="{{ 'row-inactiva' if not w['activo'] }}">
+        <td>{{ w["name"] }} {% if not w["activo"] %}<span class="badge">inactiva</span>{% endif %}</td>
+        <td>
+          {% if w["active_weekdays"] == "5,6" %}Fin de semana
+          {%- elif w["active_weekdays"] == "4" %}Viernes
+          {%- else %}Lunes a viernes{% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('main.actualizar_billetera', wallet_id=w['id']) }}" class="inline-form">
+            <label>Captura <input type="time" name="capture_time" value="{{ w['capture_time'] }}" required></label>
+            <label>Acreditación (día siguiente) <input type="time" name="payout_time" value="{{ w['payout_time'] }}" required></label>
+            <label>TNA <input type="number" step="0.01" min="0" name="tna" value="{{ w['tna'] }}" required> %</label>
+            <label>Piso <input type="number" step="0.01" min="0" name="monto_minimo" value="{{ w['monto_minimo'] }}"></label>
+            <label>Techo (vacío = sin límite) <input type="number" step="0.01" min="0" name="monto_maximo" value="{{ w['monto_maximo'] if w['monto_maximo'] is not none else '' }}"></label>
+            <label><input type="checkbox" name="activo" {{ "checked" if w["activo"] }}> Activa</label>
+            <button type="submit">Actualizar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,6 @@
+Flask>=3.0
+pywebview>=5.0
+# Linux: ventana con Qt WebEngine (empaquetable en el AppImage).
+pywebview[qt]>=5.0; sys_platform == "linux"
+# Windows: WebView2 (Edge) vía pythonnet.
+pythonnet; sys_platform == "win32"
