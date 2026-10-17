@@ -15,12 +15,12 @@
   <summary class="day-summary">
     <span class="day-summary-date">
       {{ s.date.strftime("%d/%m/%Y") }}
-      {% if s.aporte_recibido > 0 %}<span class="badge">+${{ s.aporte_recibido|ar }} aporte</span>{% endif %}
-      {% for m in s.ingresos %}<span class="badge">+${{ m.monto|ar }} {{ m.etiqueta }}</span>{% endfor %}
-      {% for m in s.egresos %}<span class="badge badge-warning">-${{ m.monto|ar }} {{ m.etiqueta }}</span>{% endfor %}
+      {% if s.aporte_recibido > 0 %}<span class="badge">+{{ s.aporte_recibido|pesos }} aporte</span>{% endif %}
+      {% for m in s.ingresos %}<span class="badge">+{{ m.monto|pesos }} {{ m.etiqueta }}</span>{% endfor %}
+      {% for m in s.egresos %}<span class="badge badge-warning">-{{ m.monto|pesos }} {{ m.etiqueta }}</span>{% endfor %}
     </span>
     <span class="day-summary-figures">
-      Rendimiento ${{ s.rendimiento_generado|ar }} · Capital <strong>${{ s.capital_cierre|ar }}</strong>
+      Rendimiento {{ s.rendimiento_generado|pesos }} · Capital <strong>{{ s.capital_cierre|pesos }}</strong>
     </span>
   </summary>
 
@@ -38,9 +38,9 @@
       <tr>
         <td>{{ c.timestamp.strftime("%H:%M") }}</td>
         <td>{{ c.wallet_name }}</td>
-        <td>${{ c.monto_capturado|ar }}</td>
+        <td>{{ c.monto_capturado|pesos }}</td>
         <td>
-          ${{ c.rendimiento|ar }}
+          {{ c.rendimiento|pesos }}
           {% if c.dias_acumulados > 1 %}<span class="badge">×{{ c.dias_acumulados }} días</span>{% endif %}
           {% if c.limitado %}<span class="badge badge-warning">limitado</span>{% endif %}
         </td>
@@ -51,9 +51,9 @@
     </tbody>
   </table>
   <p class="total">
-    Rendimiento generado: ${{ s.rendimiento_generado|ar }} ·
-    Acreditado: ${{ s.rendimiento_acreditado|ar }} ·
-    Capital de cierre: <strong>${{ s.capital_cierre|ar }}</strong>
+    Rendimiento generado: {{ s.rendimiento_generado|pesos }} ·
+    Acreditado: {{ s.rendimiento_acreditado|pesos }} ·
+    Capital de cierre: <strong>{{ s.capital_cierre|pesos }}</strong>
   </p>
 </details>
 {% else %}

@@ -39,34 +39,36 @@
   });
 </script>
 
+{% include "_alertas.html" %}
+
 <div class="kpi-row">
   <div class="stat-tile">
     <p class="stat-label">Capital hoy ({{ hoy.strftime("%d/%m/%Y") }})</p>
-    <p class="stat-value">${{ capital_hoy|ar }}</p>
+    <p class="stat-value">{{ capital_hoy|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Capital proyectado al {{ fecha_objetivo.strftime("%d/%m/%Y") }}</p>
-    <p class="stat-value">${{ capital_final|ar }}</p>
+    <p class="stat-value">{{ capital_final|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Ganancia proyectada en el período</p>
-    <p class="stat-value {{ 'positivo' if rendimiento_proyectado >= 0 else 'negativo' }}">${{ rendimiento_proyectado|ar }}</p>
+    <p class="stat-value {{ 'positivo' if rendimiento_proyectado >= 0 else 'negativo' }}">{{ rendimiento_proyectado|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Sin rulo (sin intereses) al {{ fecha_objetivo.strftime("%d/%m/%Y") }}</p>
-    <p class="stat-value {{ 'negativo' if capital_sin_rulo_final < 0 }}">${{ capital_sin_rulo_final|ar }}</p>
+    <p class="stat-value {{ 'negativo' if capital_sin_rulo_final < 0 }}">{{ capital_sin_rulo_final|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Lo que suma el rulo vs. sin rulo</p>
-    <p class="stat-value {{ 'positivo' if aporte_del_rulo >= 0 else 'negativo' }}">${{ aporte_del_rulo|ar }}</p>
+    <p class="stat-value {{ 'positivo' if aporte_del_rulo >= 0 else 'negativo' }}">{{ aporte_del_rulo|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Si dejaras todo quieto (mejor TNA activa: {{ mejor_tna|ar }}%)</p>
-    <p class="stat-value">${{ capital_quieto|ar }}</p>
+    <p class="stat-value">{{ capital_quieto|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Ventaja de rotar vs. quieto</p>
-    <p class="stat-value {{ 'positivo' if ventaja_rulo_proyectada >= 0 else 'negativo' }}">${{ ventaja_rulo_proyectada|ar }}</p>
+    <p class="stat-value {{ 'positivo' if ventaja_rulo_proyectada >= 0 else 'negativo' }}">{{ ventaja_rulo_proyectada|pesos }}</p>
   </div>
 </div>
 <p class="subtitle">
@@ -75,7 +77,7 @@
 {% if aportes_planeados %}
 <p class="subtitle">
   Incluye {{ aportes_planeados|length }} aporte(s) planeado(s):
-  {% for fecha, monto in aportes_planeados %}${{ monto|ar }} el {{ fecha.strftime("%d/%m/%Y") }}{{ ", " if not loop.last }}{% endfor %}
+  {% for fecha, monto in aportes_planeados %}{{ monto|pesos }} el {{ fecha.strftime("%d/%m/%Y") }}{{ ", " if not loop.last }}{% endfor %}
 </p>
 {% endif %}
 
@@ -91,9 +93,9 @@
         {% for point in capital_series %}
           <tr>
             <td>{{ point.date }}</td>
-            <td>${{ point.capital_cierre|ar }}</td>
-            <td>${{ point.sin_rulo|ar }}</td>
-            <td>${{ (point.capital_cierre - point.sin_rulo)|ar }}</td>
+            <td>{{ point.capital_cierre|pesos }}</td>
+            <td>{{ point.sin_rulo|pesos }}</td>
+            <td>{{ (point.capital_cierre - point.sin_rulo)|pesos }}</td>
             <td>{% if point.futuro %}<span class="badge">proyectado</span>{% endif %}</td>
           </tr>
         {% endfor %}
@@ -114,8 +116,8 @@
         {% for point in ganancia_periodica %}
           <tr>
             <td>{{ point.date }}</td>
-            <td>${{ point.ganancia_periodo|ar }}</td>
-            <td>${{ point.ganancia_acumulada|ar }}</td>
+            <td>{{ point.ganancia_periodo|pesos }}</td>
+            <td>{{ point.ganancia_acumulada|pesos }}</td>
           </tr>
         {% endfor %}
       </tbody>

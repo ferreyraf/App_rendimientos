@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{{ "Este mes" if es_mes_actual else nombre_mes }}</h1>
+    <p class="subtitle">Marcá lo que ya pagaste o cobraste con el monto real. Lo que no marques se calcula con el monto estimado.</p>
+  </div>
+  <nav class="mes-selector" aria-label="Cambiar de mes">
+    <a class="boton-icono" href="{{ url_for('main.este_mes', mes=mes_anterior) }}" aria-label="Mes anterior">‹</a>
+    <span class="mes-actual">{{ nombre_mes }}</span>
+    <a class="boton-icono" href="{{ url_for('main.este_mes', mes=mes_siguiente) }}" aria-label="Mes siguiente">›</a>
+  </nav>
+</header>
+
+<section class="kpi-row" aria-label="Resumen del mes">
+  <div class="stat-tile">
+    <p class="stat-label">Cobrado</p>
+    <p class="stat-value positivo">{{ ingresos_cobrados|pesos(0) }}</p>
+    <p class="stat-note">de {{ ingresos_estimados|pesos(0) }} estimados</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Pagado</p>
+    <p class="stat-value negativo">{{ egresos_pagados|pesos(0) }}</p>
+    <p class="stat-note">de {{ egresos_estimados|pesos(0) }} estimados</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Pendientes</p>
+    <p class="stat-value">{{ pendientes }}</p>
+    <p class="stat-note">{% if vencidos %}<span class="negativo">{{ vencidos }} con fecha pasada</span>{% else %}Nada atrasado{% endif %}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Real vs. estimado</p>
+    <p class="stat-value {{ 'positivo' if diferencia >= 0 else 'negativo' }}">{{ '+' if diferencia > 0 }}{{ diferencia|pesos(0) }}</p>
+    <p class="stat-note">{{ 'Te fue mejor de lo calculado' if diferencia > 0 else ('Gastaste más de lo calculado' if diferencia < 0 else 'Igual a lo calculado') }}</p>
+  </div>
+</section>
+
+<section class="lista-card" aria-label="Movimientos de {{ nombre_mes }}">
+  {% for f in filas %}
+    <div class="fila-pago {{ 'fila-pago-hecha' if f.real is not none }} {{ 'fila-pago-vencida' if f.vencido }}">
+      <span class="fila-pago-fecha">{{ f.fecha.strftime("%d/%m") }}</span>
+      <span class="fila-config-principal">
+        <strong>{{ f.etiqueta }}{% if f.moneda == "USD" %} <span class="badge">US${{ f.monto_original|ar(0) }}</span>{% endif %}</strong>
+        <span class="fila-config-detalle">{{ "Ingreso" if f.tipo == "ingreso" else (f.categoria or "Sin categoría") }}{% if f.vencido %} · <span class="negativo">fecha pasada</span>{% endif %}</span>
+      </span>
+      {% if f.real is not none %}
+        {% set dif = f.real - f.estimado %}
+        <span class="fila-pago-estado">
+          <span class="estado-hecho">✓ {{ "Cobrado" if f.tipo == "ingreso" else "Pagado" }} {{ f.real|pesos(0) }}</span>
+          {% if dif|abs >= 1 %}<span class="fila-config-detalle">estimado {{ f.estimado|pesos(0) }} ({{ '+' if dif > 0 }}{{ dif|pesos(0) }})</span>{% endif %}
+        </span>
+        <form method="post" action="{{ url_for('main.deshacer_pago') }}" class="fila-pago-form">
+          <input type="hidden" name="tipo" value="{{ f.tipo }}">
+          <input type="hidden" name="id" value="{{ f.id }}">
+          <input type="hidden" name="fecha" value="{{ f.fecha.isoformat() }}">
+          <input type="hidden" name="clave" value="{{ f.clave }}">
+          <input type="hidden" name="mes" value="{{ mes_param }}">
+          <button type="submit" class="btn-secondary">Deshacer</button>
+        </form>
+      {% else %}
+        <form method="post" action="{{ url_for('main.registrar_pago') }}" class="fila-pago-form">
+          <input type="hidden" name="tipo" value="{{ f.tipo }}">
+          <input type="hidden" name="id" value="{{ f.id }}">
+          <input type="hidden" name="fecha" value="{{ f.fecha.isoformat() }}">
+          <input type="hidden" name="clave" value="{{ f.clave }}">
+          <input type="hidden" name="mes" value="{{ mes_param }}">
+          <label class="visualmente-oculto" for="monto-{{ loop.index }}">Monto real de {{ f.etiqueta }}</label>
+          <span class="campo-pesos"><span aria-hidden="true">$</span><input id="monto-{{ loop.index }}" type="number" name="monto" step="0.01" min="0" value="{{ '%.2f'|format(f.estimado) }}" required></span>
+          <button type="submit">{{ "Cobrado" if f.tipo == "ingreso" else "Pagado" }}</button>
+        </form>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="vacio lista-vacia">No hay ingresos ni gastos cargados para {{ nombre_mes }}.</p>
+  {% endfor %}
+</section>
+{% endblock %}

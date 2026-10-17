@@ -27,7 +27,7 @@
 <div class="kpi-row">
   <div class="stat-tile">
     <p class="stat-label">Capital hoy ({{ hoy.strftime("%d/%m/%Y") }})</p>
-    <p class="stat-value">${{ capital_hoy|ar }}</p>
+    <p class="stat-value">{{ capital_hoy|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">TEA lograda por el rulo</p>
@@ -36,7 +36,7 @@
   {% if capital_base is not none %}
   <div class="stat-tile">
     <p class="stat-label">Capital el {{ fecha_gasto.strftime("%d/%m/%Y") }}</p>
-    <p class="stat-value">${{ capital_base|ar }}</p>
+    <p class="stat-value">{{ capital_base|pesos }}</p>
   </div>
   {% endif %}
   {% if monto_gasto is not none %}
@@ -62,7 +62,7 @@
 
 {% if monto_gasto is not none and not fecha_estimada %}
 <p class="subtitle">
-  Con el ritmo actual del rulo, un gasto de ${{ monto_gasto|ar }} no se recupera dentro del horizonte simulado ({{ horizonte_anios }} años desde el gasto). Puede deberse a una TNA baja, egresos que superan la ganancia (si están incluidos), o un monto muy alto.
+  Con el ritmo actual del rulo, un gasto de {{ monto_gasto|pesos }} no se recupera dentro del horizonte simulado ({{ horizonte_anios }} años desde el gasto). Puede deberse a una TNA baja, egresos que superan la ganancia (si están incluidos), o un monto muy alto.
 </p>
 {% endif %}
 
@@ -79,7 +79,7 @@
         {% for point in ganancia_periodica %}
           <tr>
             <td>{{ point.date }}</td>
-            <td>${{ point.ganancia_acumulada|ar }}</td>
+            <td>{{ point.ganancia_acumulada|pesos }}</td>
           </tr>
         {% endfor %}
       </tbody>

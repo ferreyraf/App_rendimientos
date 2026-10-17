@@ -98,6 +98,18 @@ class MovimientoRecurrente:
     `moneda` es "ARS" o "USD": `monto` está expresado en esa moneda y
     `cotizacion` (pesos por unidad, la resuelve la capa de datos) lo pasa a
     pesos para todos los cálculos.
+
+    `hasta` (solo recurrentes) es la última fecha en que corre, ej. la última
+    cuota; None = sin fin.
+
+    `pagos` registra lo que realmente se pagó/cobró en ocurrencias puntuales,
+    como pares (fecha de la ocurrencia, monto en pesos): esa ocurrencia usa el
+    monto real en vez del estimado (y una cuota en dólares queda fija a la
+    cotización de ese día). `pagos_aguinaldo` es lo mismo para el aguinaldo.
+
+    `aguinaldo` (ingresos recurrentes, ej. sueldo) genera medio aguinaldo por
+    semestre: 50% del mayor monto cobrado en el semestre. 0 = no; 1 = se
+    cobra el 30/06 y el 18/12; 2 = se cobra con el sueldo de julio y enero.
     """
 
     etiqueta: str
@@ -113,6 +125,10 @@ class MovimientoRecurrente:
     ajustes: tuple[tuple[date, float], ...] = ()
     moneda: str = "ARS"
     cotizacion: float = 1.0
+    hasta: date | None = None
+    aguinaldo: int = 0
+    pagos: tuple[tuple[date, float], ...] = ()
+    pagos_aguinaldo: tuple[tuple[date, float], ...] = ()
 
     @property
     def monto_en_pesos(self) -> float:
@@ -233,8 +249,70 @@ def fechas_del_movimiento(item: MovimientoRecurrente, start: date, end: date) ->
     única `fecha` si es puntual."""
     if item.recurrente:
         desde = max(start, item.fecha) if item.fecha else start
-        return _fechas_recurrentes(item.dia_mes, item.dia_habil, desde, end)
+        hasta = min(end, item.hasta) if item.hasta else end
+        return _fechas_recurrentes(item.dia_mes, item.dia_habil, desde, hasta)
     return [item.fecha] if item.fecha is not None and start <= item.fecha <= end else []
+
+
+def pago_registrado(item: MovimientoRecurrente, fecha: date) -> float | None:
+    """Monto real cargado para la ocurrencia de esa fecha, o None."""
+    for f, monto in item.pagos:
+        if f == fecha:
+            return monto
+    return None
+
+
+def monto_estimado(item: MovimientoRecurrente, fecha: date) -> float:
+    """Monto en pesos que se espera para la ocurrencia de esa fecha (con
+    aumentos y cotización), sin mirar si ya se cargó el real."""
+    return _monto_con_aumento(item, fecha)
+
+
+def monto_ocurrencia(item: MovimientoRecurrente, fecha: date) -> float:
+    """Monto en pesos de la ocurrencia de esa fecha: el real si se cargó
+    (ver `pagos`), si no el estimado con sus aumentos."""
+    real = pago_registrado(item, fecha)
+    return real if real is not None else _monto_con_aumento(item, fecha)
+
+
+def _fecha_aguinaldo(item: MovimientoRecurrente, anio: int, semestre: int) -> date | None:
+    """Cuándo se cobra el medio aguinaldo de ese semestre (1 o 2)."""
+    if item.aguinaldo == 1:
+        return date(anio, 6, 30) if semestre == 1 else date(anio, 12, 18)
+    # Con el sueldo del mes siguiente al cierre del semestre (julio / enero).
+    anio_cobro, mes_cobro = (anio, 7) if semestre == 1 else (anio + 1, 1)
+    ultimo = date(anio_cobro, mes_cobro, calendar.monthrange(anio_cobro, mes_cobro)[1])
+    fechas = _fechas_recurrentes(item.dia_mes, item.dia_habil, date(anio_cobro, mes_cobro, 1), ultimo)
+    return fechas[0] if fechas else None
+
+
+def aguinaldos(ingresos: list[MovimientoRecurrente], desde: date, hasta: date) -> list[MovimientoRecurrente]:
+    """Medio aguinaldo de cada ingreso recurrente con `aguinaldo` activo que
+    se cobra entre `desde` y `hasta`, como ingresos puntuales: el 50% del
+    mayor monto que pagó ese ingreso en el semestre."""
+    resultado = []
+    for item in ingresos:
+        if not item.recurrente or not item.aguinaldo:
+            continue
+        for anio in range(desde.year - 1, hasta.year + 1):
+            for semestre, (mes_ini, mes_fin) in ((1, (1, 6)), (2, (7, 12))):
+                cobro = _fecha_aguinaldo(item, anio, semestre)
+                if cobro is None or not (desde <= cobro <= hasta):
+                    continue
+                inicio = date(anio, mes_ini, 1)
+                fin = date(anio, mes_fin, calendar.monthrange(anio, mes_fin)[1])
+                montos = [monto_ocurrencia(item, f) for f in fechas_del_movimiento(item, inicio, fin)]
+                if not montos:
+                    continue
+                resultado.append(MovimientoRecurrente(
+                    etiqueta=f"Aguinaldo ({item.etiqueta})",
+                    monto=max(montos) / 2,
+                    recurrente=False,
+                    fecha=cobro,
+                    categoria=item.categoria,
+                    pagos=item.pagos_aguinaldo,
+                ))
+    return resultado
 
 
 def _monto_con_aumento(item: MovimientoRecurrente, fecha: date) -> float:
@@ -248,6 +326,30 @@ def _monto_con_aumento(item: MovimientoRecurrente, fecha: date) -> float:
     for fecha_ajuste in fechas_de_ajuste(item, fecha):
         monto *= 1 + pct_del_ajuste(item, fecha_ajuste)[0] / 100
     return monto
+
+
+def proximos_movimientos(
+    egresos: list[MovimientoRecurrente],
+    ingresos: list[MovimientoRecurrente],
+    desde: date,
+    hasta: date,
+) -> list[dict]:
+    """Cada ingreso/egreso que cae entre `desde` y `hasta`, con su fecha y su
+    monto en pesos (con signo: + ingreso, - egreso), ordenados por fecha."""
+    resultado = []
+    for items, signo in ((ingresos, 1), (egresos, -1)):
+        for item in items:
+            for fecha in fechas_del_movimiento(item, desde, hasta):
+                resultado.append({
+                    "fecha": fecha,
+                    "etiqueta": item.etiqueta,
+                    "categoria": item.categoria,
+                    "monto": signo * monto_ocurrencia(item, fecha),
+                    "moneda": item.moneda,
+                    "monto_original": item.monto,
+                })
+    resultado.sort(key=lambda m: (m["fecha"], -m["monto"]))
+    return resultado
 
 
 def calendario_ajustes(item: MovimientoRecurrente, hasta: date) -> list[dict]:
@@ -278,7 +380,7 @@ def movimientos_del_mes(items: list[MovimientoRecurrente], anio: int, mes: int) 
     resultado = []
     for item in items:
         resultado += [
-            Movimiento(item.etiqueta, _monto_con_aumento(item, f), item.categoria)
+            Movimiento(item.etiqueta, monto_ocurrencia(item, f), item.categoria)
             for f in fechas_del_movimiento(item, primer_dia, ultimo_dia)
         ]
     return resultado
@@ -290,8 +392,12 @@ def simulate(
     ingresos: list[MovimientoRecurrente],
     end_date: date,
     wallets: list[Wallet],
+    ajustes_saldo: list[tuple[datetime, float]] = (),
 ) -> list[DaySummary]:
     """Reconstruye día a día el capital del rulo hasta end_date (inclusive).
+
+    `ajustes_saldo` son correcciones (momento, monto) que llevan el capital
+    simulado al saldo real que cargó el usuario (ver `ajustes_por_controles`).
 
     `aportes` es la lista de inyecciones de capital (fecha, monto) — el primer
     aporte cronológico marca el arranque de la simulación, y aportes
@@ -324,7 +430,7 @@ def simulate(
                 _Evento(
                     datetime.combine(f, time.min),
                     tipo,
-                    monto=_monto_con_aumento(item, f),
+                    monto=monto_ocurrencia(item, f),
                     etiqueta=item.etiqueta,
                 )
                 for f in fechas
@@ -335,6 +441,11 @@ def simulate(
         [
             _Evento(datetime.combine(fecha, time.min), "aporte", monto=monto)
             for fecha, monto in aportes
+        ]
+        + [
+            _Evento(momento, "aporte", monto=monto)
+            for momento, monto in ajustes_saldo
+            if momento.date() <= end_date
         ]
         + _eventos_movimiento(egresos, "egreso")
         + _eventos_movimiento(ingresos, "ingreso")
@@ -500,6 +611,104 @@ def simulate(
     return [summaries[d] for d in sorted(summaries) if start_date <= d <= end_date]
 
 
+MESES_NOMBRE = (
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+)
+
+
+def alertas_financieras(
+    capital_por_dia: dict[date, float],
+    hoy: date,
+    egresos: list[MovimientoRecurrente],
+    ingresos: list[MovimientoRecurrente],
+    meses_adelante: int = 6,
+) -> list[dict]:
+    """Avisos sobre lo que viene, a partir del capital proyectado día a día:
+    cuándo el capital pasaría a negativo (y con qué se recupera), pagos
+    grandes en las próximas 3 semanas y meses que gastan más de lo que entra.
+    Cada aviso: {"nivel": "peligro"|"aviso", "texto": str}. Los montos van
+    como números para que la vista los formatee."""
+    alertas = []
+    dias = sorted(d for d in capital_por_dia if d >= hoy)
+
+    # 1) Capital negativo.
+    negativo = next((d for d in dias if capital_por_dia[d] < -0.5), None)
+    if negativo is not None:
+        recupera = next((d for d in dias if d > negativo and capital_por_dia[d] >= 0), None)
+        ingreso = None
+        if recupera is not None:
+            del_dia = [m for m in proximos_movimientos([], ingresos, recupera, recupera) if m["monto"] > 0]
+            ingreso = del_dia[0]["etiqueta"] if del_dia else None
+        alertas.append({
+            "nivel": "peligro",
+            "tipo": "negativo",
+            "fecha": negativo,
+            "monto": capital_por_dia[negativo],
+            "recupera": recupera,
+            "ingreso": ingreso,
+        })
+
+    # 2) Pagos grandes cercanos (≥ 30% de lo que habría ese día).
+    grandes = []
+    for m in proximos_movimientos(egresos, [], hoy + timedelta(days=1), hoy + timedelta(days=21)):
+        disponible = capital_por_dia.get(m["fecha"] - timedelta(days=1))
+        if disponible and disponible > 0 and -m["monto"] >= 0.3 * disponible:
+            grandes.append({
+                "nivel": "aviso",
+                "tipo": "pago_grande",
+                "fecha": m["fecha"],
+                "etiqueta": m["etiqueta"],
+                "monto": -m["monto"],
+                "pct": -m["monto"] / disponible * 100,
+            })
+    alertas += grandes[:3]
+
+    # 3) Meses con saldo negativo (gastos > ingresos).
+    for i in range(meses_adelante):
+        primero = sumar_meses(hoy, i)
+        saldo = (
+            sum(x.monto for x in movimientos_del_mes(ingresos, primero.year, primero.month))
+            - sum(x.monto for x in movimientos_del_mes(egresos, primero.year, primero.month))
+        )
+        if saldo < -0.5:
+            alertas.append({
+                "nivel": "aviso",
+                "tipo": "mes_negativo",
+                "mes": MESES_NOMBRE[primero.month - 1],
+                "anio": primero.year,
+                "monto": -saldo,
+            })
+    return alertas
+
+
+def ajustes_por_controles(
+    aportes: list[tuple[date, float]],
+    egresos: list[MovimientoRecurrente],
+    ingresos: list[MovimientoRecurrente],
+    wallets: list[Wallet],
+    controles: list[tuple[date, float]],
+) -> list[dict]:
+    """Para cada control de saldo real (fecha, monto), la corrección que lleva
+    el capital simulado a ese monto al cierre de ese día. Se calculan en orden:
+    cada control parte de la simulación ya corregida por los anteriores."""
+    if not aportes:
+        return []
+    inicio = min(fecha for fecha, _ in aportes)
+    resultado = []
+    ajustes: list[tuple[datetime, float]] = []
+    for fecha, real in sorted(controles):
+        if fecha < inicio:
+            continue
+        dias = simulate(aportes, egresos, ingresos, fecha, wallets, ajustes)
+        simulado = dias[-1].capital_cierre if dias else 0.0
+        diferencia = real - simulado
+        momento = datetime.combine(fecha, time(23, 59, 59))
+        ajustes.append((momento, diferencia))
+        resultado.append({"fecha": fecha, "real": real, "simulado": simulado, "diferencia": diferencia, "momento": momento})
+    return resultado
+
+
 def proxima_captura(desde: datetime, wallets: list[Wallet]) -> tuple[datetime, Wallet] | None:
     """Encuentra la próxima captura (acción manual: mover el dinero) desde `desde`.
 
@@ -560,7 +769,7 @@ def _flujos_movimiento(
     flujos = []
     for item in items:
         fechas = fechas_del_movimiento(item, start, end)
-        flujos += [(f, signo * _monto_con_aumento(item, f)) for f in fechas]
+        flujos += [(f, signo * monto_ocurrencia(item, f)) for f in fechas]
     return flujos
 
 
@@ -629,6 +838,17 @@ def fecha_recuperacion(
         (s.date for s in summaries if s.date >= desde and s.capital_cierre - capital_base >= monto),
         None,
     )
+
+
+def tea_del_rulo(summaries: list[DaySummary]) -> float:
+    """TEA (%) que efectivamente rinde el rulo: rendimiento acreditado por
+    día sobre el capital de cada día, anualizado. No la distorsionan sueldo,
+    gastos ni aportes (que mueven el capital pero no son rendimiento)."""
+    capital_dias = sum(s.capital_apertura for s in summaries if s.capital_apertura > 0)
+    if capital_dias <= 0:
+        return 0.0
+    rendimiento = sum(s.rendimiento_acreditado for s in summaries if s.capital_apertura > 0)
+    return ((1 + rendimiento / capital_dias) ** 365 - 1) * 100
 
 
 def tasa_efectiva_anual(principal_total: float, capital_final: float, dias: int) -> float:

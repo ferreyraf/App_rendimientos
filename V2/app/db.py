@@ -114,6 +114,29 @@ CREATE TABLE IF NOT EXISTS cotizaciones (
     actualizado TEXT NOT NULL
 );
 
+-- Monto real (en pesos) de una ocurrencia puntual de un egreso/ingreso: lo
+-- que efectivamente se pagó o cobró ese día. `clave` distingue ocurrencias
+-- derivadas del mismo movimiento ('aguinaldo'); '' es la ocurrencia normal.
+CREATE TABLE IF NOT EXISTS pagos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tabla TEXT NOT NULL,
+    movimiento_id INTEGER NOT NULL,
+    fecha TEXT NOT NULL,
+    clave TEXT NOT NULL DEFAULT '',
+    monto REAL NOT NULL,
+    registrado TEXT NOT NULL,
+    UNIQUE (tabla, movimiento_id, fecha, clave)
+);
+
+-- Saldo real total del rulo a una fecha, cargado a mano: la simulación se
+-- recalibra a ese valor al cierre de ese día.
+CREATE TABLE IF NOT EXISTS controles_saldo (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL,
+    monto REAL NOT NULL,
+    registrado TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS inversiones (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     etiqueta TEXT NOT NULL,
@@ -156,6 +179,7 @@ def init_db():
     _migrate_categoria(conn)
     _migrate_aumento_cuatrimestral(conn)
     _migrate_moneda(conn)
+    _migrate_cuotas_y_aguinaldo(conn)
     _migrate_personal_pay_weekday(conn)
     _migrate_mercadopago_weekday(conn)
     _migrate_new_wallet(conn)
@@ -287,6 +311,17 @@ def _migrate_moneda(conn):
             conn.execute(f"ALTER TABLE {tabla} ADD COLUMN moneda TEXT NOT NULL DEFAULT 'ARS'")
 
 
+def _migrate_cuotas_y_aguinaldo(conn):
+    """Agrega `hasta` (fin de un recurrente, ej. última cuota) y `aguinaldo`
+    (ingresos que generan medio aguinaldo por semestre) si faltan."""
+    for tabla in ("egresos", "ingresos"):
+        columnas = {r["name"] for r in conn.execute(f"PRAGMA table_info({tabla})")}
+        if "hasta" not in columnas:
+            conn.execute(f"ALTER TABLE {tabla} ADD COLUMN hasta TEXT")
+        if "aguinaldo" not in columnas:
+            conn.execute(f"ALTER TABLE {tabla} ADD COLUMN aguinaldo INTEGER NOT NULL DEFAULT 0")
+
+
 def _migrate_legacy_egresos(conn):
     """Traslada datos del esquema viejo (impuestos puntuales + cuota_fija/sueldo
     únicos) al nuevo esquema de egresos/ingresos etiquetados, y borra las
@@ -391,8 +426,9 @@ def delete_aporte(conn, aporte_id):
     conn.commit()
 
 
-def _row_to_movimiento(row, ajustes=(), cotizaciones=None) -> MovimientoRecurrente:
+def _row_to_movimiento(row, ajustes=(), cotizaciones=None, pagos=None) -> MovimientoRecurrente:
     columnas = row.keys()
+    pagos = pagos or {}
     return MovimientoRecurrente(
         etiqueta=row["etiqueta"],
         monto=row["monto"],
@@ -411,6 +447,10 @@ def _row_to_movimiento(row, ajustes=(), cotizaciones=None) -> MovimientoRecurren
         ajustes=tuple(ajustes),
         moneda=row["moneda"] if "moneda" in columnas else "ARS",
         cotizacion=(cotizaciones or {}).get(row["moneda"] if "moneda" in columnas else "ARS", 1.0),
+        hasta=date.fromisoformat(row["hasta"]) if "hasta" in columnas and row["hasta"] else None,
+        aguinaldo=row["aguinaldo"] if "aguinaldo" in columnas else 0,
+        pagos=tuple(pagos.get("", ())),
+        pagos_aguinaldo=tuple(pagos.get("aguinaldo", ())),
     )
 
 
@@ -427,8 +467,19 @@ def _get_movimientos(conn, tabla):
     # peso): Configuración lo marca y no deja cargarlos sin cotización.
     cotizaciones = {"ARS": 1.0, "USD": 0.0}
     cotizaciones.update({r["moneda"]: r["valor"] for r in conn.execute("SELECT moneda, valor FROM cotizaciones")})
+    pagos: dict[int, dict[str, list]] = {}
+    for p in conn.execute(
+        "SELECT movimiento_id, fecha, clave, monto FROM pagos WHERE tabla = ? ORDER BY fecha", (tabla,)
+    ):
+        pagos.setdefault(p["movimiento_id"], {}).setdefault(p["clave"], []).append(
+            (date.fromisoformat(p["fecha"]), p["monto"])
+        )
     return [
-        (row["id"], _row_to_movimiento(row, ajustes.get(row["id"], ()), cotizaciones)) for row in rows
+        (
+            row["id"],
+            _row_to_movimiento(row, ajustes.get(row["id"], ()), cotizaciones, pagos.get(row["id"])),
+        )
+        for row in rows
     ]
 
 
@@ -483,6 +534,7 @@ def _add_movimiento(
         ),
     )
     conn.commit()
+    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
 def _update_movimiento(
@@ -513,7 +565,57 @@ def _update_movimiento(
 def _delete_movimiento(conn, tabla, movimiento_id):
     conn.execute(f"DELETE FROM {tabla} WHERE id = ?", (movimiento_id,))
     conn.execute("DELETE FROM ajustes WHERE tabla = ? AND movimiento_id = ?", (tabla, movimiento_id))
+    conn.execute("DELETE FROM pagos WHERE tabla = ? AND movimiento_id = ?", (tabla, movimiento_id))
     conn.commit()
+
+
+def guardar_extras(conn, tabla, movimiento_id, hasta, aguinaldo):
+    """Campos que se guardan aparte del alta/edición: fin del recurrente
+    (`hasta`) y el modo de aguinaldo automático (solo ingresos)."""
+    conn.execute(
+        f"UPDATE {tabla} SET hasta = ?, aguinaldo = ? WHERE id = ?",
+        (hasta.isoformat() if hasta else None, int(aguinaldo), movimiento_id),
+    )
+    conn.commit()
+
+
+def guardar_pago(conn, tabla, movimiento_id, fecha, clave, monto):
+    conn.execute(
+        "INSERT INTO pagos (tabla, movimiento_id, fecha, clave, monto, registrado) VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT (tabla, movimiento_id, fecha, clave) DO UPDATE SET monto = excluded.monto, "
+        "registrado = excluded.registrado",
+        (tabla, movimiento_id, fecha.isoformat(), clave, monto, datetime.now().isoformat(timespec="seconds")),
+    )
+    conn.commit()
+
+
+def eliminar_pago(conn, tabla, movimiento_id, fecha, clave):
+    conn.execute(
+        "DELETE FROM pagos WHERE tabla = ? AND movimiento_id = ? AND fecha = ? AND clave = ?",
+        (tabla, movimiento_id, fecha.isoformat(), clave),
+    )
+    conn.commit()
+
+
+def get_controles_saldo(conn):
+    rows = conn.execute("SELECT id, fecha, monto FROM controles_saldo ORDER BY fecha, id").fetchall()
+    return [(row["id"], date.fromisoformat(row["fecha"]), row["monto"]) for row in rows]
+
+
+def add_control_saldo(conn, fecha, monto):
+    # Un control por día: el nuevo reemplaza al anterior de esa fecha.
+    conn.execute("DELETE FROM controles_saldo WHERE fecha = ?", (fecha.isoformat(),))
+    conn.execute(
+        "INSERT INTO controles_saldo (fecha, monto, registrado) VALUES (?, ?, ?)",
+        (fecha.isoformat(), monto, datetime.now().isoformat(timespec="seconds")),
+    )
+    conn.commit()
+
+
+def delete_control_saldo(conn, control_id):
+    conn.execute("DELETE FROM controles_saldo WHERE id = ?", (control_id,))
+    conn.commit()
+
 
 
 def guardar_ajuste(conn, tabla, movimiento_id, fecha, pct):
@@ -560,6 +662,7 @@ def add_egreso(
         ),
     )
     conn.commit()
+    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
 def update_egreso(
@@ -600,7 +703,7 @@ def add_ingreso(
     conn, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil,
     aumento_pct=0.0, aumento_inicio=None, aumento_periodo_meses=4, moneda="ARS",
 ):
-    _add_movimiento(
+    return _add_movimiento(
         conn, "ingresos", etiqueta, monto, recurrente, fecha, dia_mes, dia_habil,
         aumento_pct, aumento_inicio, aumento_periodo_meses, moneda,
     )

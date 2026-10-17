@@ -61,6 +61,8 @@ def pyinstaller():
     if sys.platform == "win32":
         args += ["--icon", str(PACKAGING / "icons" / "icono.ico")]
         args += ["--version-file", str(_version_file_windows())]
+        # pystray elige su backend en tiempo de ejecución: PyInstaller no lo ve solo.
+        args += ["--hidden-import", "pystray._win32"]
     else:
         # Solo el backend Qt de pywebview; evita arrastrar GTK si está instalado.
         args += ["--exclude-module", "gi", "--exclude-module", "webview.platforms.gtk"]

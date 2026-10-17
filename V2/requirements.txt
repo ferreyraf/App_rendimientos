@@ -4,3 +4,6 @@ pywebview>=5.0
 pywebview[qt]>=5.0; sys_platform == "linux"
 # Windows: WebView2 (Edge) vía pythonnet.
 pythonnet; sys_platform == "win32"
+# Windows: ícono en la bandeja del sistema (en Linux se usa Qt).
+pystray; sys_platform == "win32"
+Pillow; sys_platform == "win32"

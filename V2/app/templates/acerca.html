@@ -34,7 +34,7 @@
         <tr>
           <th>Dólar</th>
           <td>
-            {% if cotizacion_usd %}${{ cotizacion_usd.valor|ar }} · consultado {{ cotizacion_usd.actualizado.strftime("%d/%m/%Y %H:%M") }}{% else %}Sin consultar todavía{% endif %}
+            {% if cotizacion_usd %}{{ cotizacion_usd.valor|pesos }} · consultado {{ cotizacion_usd.actualizado.strftime("%d/%m/%Y %H:%M") }}{% else %}Sin consultar todavía{% endif %}
           </td>
         </tr>
       </tbody>

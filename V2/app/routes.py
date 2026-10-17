@@ -1,21 +1,30 @@
+import calendar
 import csv
 import io
 import json
 import logging
 import platform
+import tempfile
 import sys
 import time
 import urllib.request
 from dataclasses import replace
+from pathlib import Path
 from datetime import date, datetime, timedelta
 
-from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, send_file, url_for
 
-from . import cotizacion, db, formato_ar
-from .version import APP_NAME, DESCRIPTION, PUBLISHER, __version__
+from . import cotizacion, db, formato_ar, formato_pesos, preferencias, respaldo
+from .version import APP_NAME, DESCRIPTION, PUBLISHER, REPO_GITHUB, __version__
 from .domain import (
     MovimientoRecurrente,
     Wallet,
+    aguinaldos,
+    ajustes_por_controles,
+    alertas_financieras,
+    fechas_del_movimiento,
+    monto_estimado,
+    pago_registrado,
     billetera_actual,
     calendario_ajustes,
     capital_simple,
@@ -24,9 +33,11 @@ from .domain import (
     fecha_recuperacion,
     movimientos_del_mes,
     proxima_captura,
+    proximos_movimientos,
     proximo_vencimiento_impuestos,
     simulate,
     sumar_meses,
+    tea_del_rulo,
     tasa_efectiva_anual,
 )
 
@@ -67,13 +78,65 @@ def _egresos(conn) -> list[MovimientoRecurrente]:
 
 
 def _ingresos(conn) -> list[MovimientoRecurrente]:
-    return [m for _, m in db.get_ingresos(conn)]
+    """Ingresos cargados más el aguinaldo automático de los que lo tienen
+    activo (ver MovimientoRecurrente.aguinaldo)."""
+    ingresos = [m for _, m in db.get_ingresos(conn)]
+    hoy = date.today()
+    return ingresos + aguinaldos(ingresos, date(hoy.year - 2, 1, 1), date(hoy.year + 3, 12, 31))
+
+
+def _controles(conn, aportes, egresos, ingresos, wallets) -> list[dict]:
+    """Cada control de saldo real con la diferencia contra lo simulado."""
+    controles = [(fecha, monto) for _, fecha, monto in db.get_controles_saldo(conn)]
+    return ajustes_por_controles(aportes, egresos, ingresos, wallets, controles) if controles else []
+
+
+def _alertas(conn, capital_por_dia, hoy, egresos, ingresos) -> list[dict]:
+    """Alertas de la proyección más los pagos del mes con fecha pasada que
+    todavía no se marcaron en "Este mes"."""
+    alertas = alertas_financieras(capital_por_dia, hoy, egresos, ingresos)
+    # Solo cuenta lo que cae desde el arranque del rulo (lo anterior no entra en la simulación).
+    aportes = _aportes_pares(conn)
+    inicio = min((f for f, _ in aportes), default=hoy)
+    vencidos = [
+        f for f in _ocurrencias_mes(conn, hoy.year, hoy.month, hoy) if f["vencido"] and f["fecha"] >= inicio
+    ]
+    if vencidos:
+        alertas.append({"nivel": "aviso", "tipo": "vencidos", "cantidad": len(vencidos)})
+    return alertas
+
+
+def _controles_con_id(conn) -> list[dict]:
+    """Controles de saldo para listar en Configuración (con su id para borrar)."""
+    aportes = _aportes_pares(conn)
+    if not aportes:
+        return []
+    wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    calculados = {c["fecha"]: c for c in _controles(conn, aportes, _egresos(conn), _ingresos(conn), wallets)}
+    return [
+        dict(calculados[fecha], id=id_) if fecha in calculados
+        else {"id": id_, "fecha": fecha, "real": monto, "simulado": None, "diferencia": None}
+        for id_, fecha, monto in db.get_controles_saldo(conn)
+    ]
+
+
+def _ajustes_saldo(conn, aportes, egresos, ingresos, wallets) -> list[tuple[datetime, float]]:
+    """Correcciones que llevan la simulación a los saldos reales cargados."""
+    return [(c["momento"], c["diferencia"]) for c in _controles(conn, aportes, egresos, ingresos, wallets)]
+
+
+def _con_ajustes(aportes, ajustes) -> list[tuple[date, float]]:
+    """Aportes más las correcciones de saldo, por día (para los cálculos sin
+    rulo / quieto, que no trabajan con horas)."""
+    return list(aportes) + [(momento.date(), monto) for momento, monto in ajustes]
 
 
 # Categorías base de los egresos: fijos (alquiler, cuotas), servicios (luz,
 # gas, internet), móviles (comida, transporte del día a día) y ocio. Se pueden
 # sumar otras que ya existan en la base, pero estas siempre se ofrecen primero.
 CATEGORIAS_GASTO = ("Gastos fijos", "Servicios", "Gastos móviles", "Ocio")
+
+DIAS = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
 
 MESES = (
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -83,9 +146,10 @@ MESES = (
 
 def _agrupar_por_mes(movimientos, hoy: date) -> dict:
     """Separa los movimientos (id, MovimientoRecurrente) en recurrentes y
-    puntuales agrupados por mes (más reciente primero). Cada mes trae el
+    puntuales agrupados por mes. Cada mes trae el
     subtotal de sus puntuales y el total del mes sumando los recurrentes que
-    caen en él — para que en Configuración se vea qué corresponde a cada mes."""
+    caen en él — para que en Configuración se vea qué corresponde a cada mes.
+    Orden: el mes actual y los próximos (cronológico), después los pasados."""
     recurrentes = [(id_, m) for id_, m in movimientos if m.recurrente]
     todos = [m for _, m in movimientos]
 
@@ -94,8 +158,11 @@ def _agrupar_por_mes(movimientos, hoy: date) -> dict:
         if not m.recurrente and m.fecha is not None:
             por_mes.setdefault((m.fecha.year, m.fecha.month), []).append((id_, m))
 
+    actual = (hoy.year, hoy.month)
+    proximos = sorted(k for k in por_mes if k >= actual)
+    pasados = sorted((k for k in por_mes if k < actual), reverse=True)
     meses = []
-    for (anio, mes) in sorted(por_mes, reverse=True):
+    for (anio, mes) in proximos + pasados:
         items = sorted(por_mes[(anio, mes)], key=lambda par: par[1].fecha)
         meses.append({
             "nombre": f"{MESES[mes - 1]} {anio}",
@@ -157,6 +224,34 @@ def _flujo_mensual(aportes, egresos, ingresos, hoy: date) -> list[dict]:
     return meses
 
 
+def _datos_movimiento(tipo: str, id_: int, m) -> dict:
+    """Todo lo que el panel de edición de Configuración necesita de un
+    egreso/ingreso (se serializa a JSON en la fila)."""
+    return {
+        "id": id_,
+        "etiqueta": m.etiqueta,
+        "categoria": m.categoria,
+        "monto": m.monto,
+        "moneda": m.moneda,
+        "monto_pesos": m.monto_en_pesos,
+        "recurrente": m.recurrente,
+        "fecha": m.fecha.isoformat() if m.fecha and not m.recurrente else "",
+        "desde": m.fecha.isoformat() if m.fecha and m.recurrente else "",
+        "dia_mes": m.dia_mes or "",
+        "dia_habil": m.dia_habil,
+        "aumento_pct": m.aumento_pct or "",
+        "aumento_periodo_meses": m.aumento_periodo_meses or 4,
+        "aumento_inicio": m.aumento_inicio.isoformat() if m.aumento_inicio else "",
+        "hasta": m.hasta.isoformat() if m.hasta else "",
+        "aguinaldo": str(m.aguinaldo),
+        "ajustes": [
+            {"mes": f"{MESES[f.month - 1][:3]} {f.year}", "pct": pct} for f, pct in m.ajustes
+        ],
+        "url_editar": url_for(f"main.editar_{tipo}", **{f"{tipo}_id": id_}),
+        "url_eliminar": url_for(f"main.eliminar_{tipo}", **{f"{tipo}_id": id_}),
+    }
+
+
 def _ajustes_configurables(egresos, ingresos, hoy: date) -> list[dict]:
     """Movimientos recurrentes con aumento periódico configurado, con su
     calendario de ajustes hasta 12 meses adelante — para cargar el % real de
@@ -209,6 +304,32 @@ def _refrescar_cotizacion():
         cotizacion.refrescar_si_vieja(db.get_db())
 
 
+# Acciones que no deben volver a publicar la base al terminar (ya la manejan).
+_SIN_PUBLICAR = {"main.sincronizar_ahora", "main.guardar_sync", "main.restaurar_respaldo"}
+
+
+@bp.before_app_request
+def _traer_cambios_de_otra_pc():
+    """Si la base compartida cambió (otra PC guardó algo), traerla."""
+    if request.method == "GET" and request.endpoint not in (None, "static") and not request.path.startswith("/api/"):
+        mensaje = respaldo.traer_si_cambio()
+        if mensaje and mensaje != "publicada":
+            flash(mensaje, "success")
+
+
+@bp.after_app_request
+def _publicar_cambios(respuesta):
+    """Después de cada cambio guardado, publicar la base en la carpeta compartida."""
+    if (
+        request.method == "POST"
+        and respuesta.status_code in (200, 302)
+        and request.endpoint not in _SIN_PUBLICAR
+        and respaldo.carpeta_sync() is not None
+    ):
+        respaldo.publicar()
+    return respuesta
+
+
 def _parse_moneda(form, conn) -> str:
     """Moneda del formulario. Para cargar algo en dólares tiene que haber una
     cotización guardada (si no hay, se intenta consultar en el momento)."""
@@ -218,6 +339,23 @@ def _parse_moneda(form, conn) -> str:
     if moneda == "USD" and db.get_cotizacion(conn, "USD") is None and cotizacion.actualizar(conn) is None:
         raise ValueError("No se pudo obtener la cotización del dólar (infodolar). Probá de nuevo con conexión.")
     return moneda
+
+
+def _parse_extras(form) -> tuple[date | None, int]:
+    """`hasta` (fin de un recurrente, ej. la última cuota) y el modo de
+    aguinaldo automático (0 = no, 1 = 30/06 y 18/12, 2 = con el sueldo de
+    julio y enero). Solo aplican a recurrentes."""
+    if form.get("recurrente") != "on":
+        return None, 0
+    hasta_raw = (form.get("hasta") or "").strip()
+    hasta = date.fromisoformat(hasta_raw) if hasta_raw else None
+    desde_raw = (form.get("desde") or "").strip()
+    if hasta and desde_raw and hasta < date.fromisoformat(desde_raw):
+        raise ValueError("La fecha \"hasta\" no puede ser anterior a \"desde\".")
+    aguinaldo = int(form.get("aguinaldo") or 0)
+    if aguinaldo not in (0, 1, 2):
+        raise ValueError("Opción de aguinaldo inválida.")
+    return hasta, aguinaldo
 
 
 def _parse_movimiento_form(
@@ -271,16 +409,17 @@ def dashboard():
     conn = db.get_db()
     aportes = _aportes_pares(conn)
     if not aportes:
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     egresos = _egresos(conn)
     ingresos = _ingresos(conn)
+    ajustes = _ajustes_saldo(conn, aportes, egresos, ingresos, wallets)
     total_invertido = _total_invertido(conn)
 
     ahora = datetime.now()
     hoy = ahora.date()
-    summaries = simulate(aportes, egresos, ingresos, hoy, wallets)
+    summaries = simulate(aportes, egresos, ingresos, hoy, wallets, ajustes)
     summary = summaries[-1] if summaries else None
 
     proxima_info = None
@@ -305,20 +444,14 @@ def dashboard():
 
     principal_total = sum(monto for _, monto in aportes)
     capital_hoy = summary.capital_cierre if summary else principal_total
-    dias_totales = (hoy - min(fecha for fecha, _ in aportes)).days + 1
-
-    ganancia_neta = capital_hoy - principal_total
-    tea_lograda = tasa_efectiva_anual(principal_total, capital_hoy, dias_totales)
 
     mejor_quieto = max(
-        (capital_simple(aportes, w.default_tna, hoy, egresos, ingresos) for w in wallets if w.activo),
+        (capital_simple(_con_ajustes(aportes, ajustes), w.default_tna, hoy, egresos, ingresos) for w in wallets if w.activo),
         default=principal_total,
     )
     ventaja_rulo = capital_hoy - mejor_quieto
 
     total_aportado = principal_total
-    total_egresos = sum(s.egreso_pagado for s in summaries)
-    total_ingresos = sum(s.ingreso_recibido for s in summaries)
     patrimonio_total = capital_hoy + total_invertido
 
     vencimiento = proximo_vencimiento_impuestos(hoy)
@@ -329,34 +462,81 @@ def dashboard():
     total_egresos_mes = sum(m.monto for m in egresos_mes)
     total_ingresos_mes = sum(m.monto for m in ingresos_mes)
 
-    egresos_por_categoria: dict[str, float] = {}
+    # Gastos del mes por categoría: siempre las categorías base (aunque estén
+    # en cero, para ver qué falta cargar) más cualquier otra que exista.
+    por_categoria = {cat: 0.0 for cat in CATEGORIAS_GASTO}
     for m in egresos_mes:
         clave = m.categoria or "Sin categoría"
-        egresos_por_categoria[clave] = egresos_por_categoria.get(clave, 0.0) + m.monto
-    egresos_por_categoria_serie = [
-        {"categoria": k, "monto": v} for k, v in egresos_por_categoria.items()
+        por_categoria[clave] = por_categoria.get(clave, 0.0) + m.monto
+    egresos_por_categoria = [
+        {
+            "categoria": k,
+            "monto": v,
+            "pct": (v / total_egresos_mes * 100) if total_egresos_mes else 0.0,
+        }
+        for k, v in sorted(por_categoria.items(), key=lambda kv: kv[1], reverse=True)
     ]
+
+    # Capital al cierre del mes y a ~9 meses, con rulo y sin él (la misma plata
+    # sin ningún interés): la diferencia es lo que aporta el rulo.
+    fin_mes = date(hoy.year, hoy.month, calendar.monthrange(hoy.year, hoy.month)[1])
+    horizonte = sumar_meses(hoy, 9) - timedelta(days=1)
+    proyectado = {s.date: s.capital_cierre for s in simulate(aportes, egresos, ingresos, horizonte, wallets, ajustes)}
+    sin_rulo = capital_sin_rendimiento(_con_ajustes(aportes, ajustes), egresos, ingresos, horizonte)
+    rendimiento_acumulado = capital_hoy - sin_rulo.get(hoy, capital_hoy)
+    capital_fin_mes = proyectado.get(fin_mes, capital_hoy)
+    rendimiento_resto_mes = (capital_fin_mes - sin_rulo.get(fin_mes, capital_fin_mes)) - rendimiento_acumulado
+    con_rulo_horizonte = proyectado.get(horizonte, capital_hoy)
+    sin_rulo_horizonte = sin_rulo.get(horizonte, capital_hoy)
+
+    proximo_ajuste = None
+    for m in egresos + ingresos:
+        if not m.recurrente or m.aumento_inicio is None or not (m.aumento_pct or m.ajustes):
+            continue
+        siguiente = next((a for a in calendario_ajustes(m, horizonte) if a["fecha"] > hoy), None)
+        if siguiente and (proximo_ajuste is None or siguiente["fecha"] < proximo_ajuste["fecha"]):
+            proximo_ajuste = dict(siguiente, etiqueta=m.etiqueta)
+
+    proximos = proximos_movimientos(egresos, ingresos, hoy + timedelta(days=1), hoy + timedelta(days=45))[:7]
 
     return render_template(
         "dashboard.html",
         summary=summary,
         hoy=hoy,
+        dia_semana=DIAS[hoy.weekday()],
         ahora=ahora,
         proxima=proxima_info,
         actual=actual_info,
-        ganancia_neta=ganancia_neta,
-        tea_lograda=tea_lograda,
         ventaja_rulo=ventaja_rulo,
         total_aportado=total_aportado,
-        total_egresos=total_egresos,
-        total_ingresos=total_ingresos,
         total_invertido=total_invertido,
         patrimonio_total=patrimonio_total,
         vencimiento=vencimiento,
         dias_para_vencimiento=dias_para_vencimiento,
+        nombre_mes=MESES[hoy.month - 1].lower(),
+        ingresos_mes=ingresos_mes,
+        egresos_mes=egresos_mes,
         total_egresos_mes=total_egresos_mes,
         total_ingresos_mes=total_ingresos_mes,
-        egresos_por_categoria=egresos_por_categoria_serie,
+        egresos_por_categoria=egresos_por_categoria,
+        capital_hoy=capital_hoy,
+        fin_mes=fin_mes,
+        capital_fin_mes=capital_fin_mes,
+        rendimiento_resto_mes=rendimiento_resto_mes,
+        rendimiento_acumulado=rendimiento_acumulado,
+        horizonte=horizonte,
+        nombre_horizonte=f"{MESES[horizonte.month - 1].lower()} {horizonte.year}",
+        con_rulo_horizonte=con_rulo_horizonte,
+        sin_rulo_horizonte=sin_rulo_horizonte,
+        proximo_ajuste=proximo_ajuste,
+        nombre_mes_ajuste=(
+            f"{MESES[proximo_ajuste['fecha'].month - 1][:3].lower()} {str(proximo_ajuste['fecha'].year)[2:]}"
+            if proximo_ajuste else ""
+        ),
+        proximos=proximos,
+        cotizacion_usd=db.get_cotizacion(conn, "USD"),
+        ultimo_control=(_controles(conn, aportes, egresos, ingresos, wallets) or [None])[-1],
+        alertas=_alertas(conn, proyectado, hoy, egresos, ingresos),
     )
 
 
@@ -370,18 +550,18 @@ def configuracion():
             fecha = date.fromisoformat(request.form["fecha"])
         except (KeyError, ValueError):
             flash("Datos inválidos: revisá el monto y la fecha.", "error")
-            return redirect(url_for("main.configuracion"))
+            return redirect(url_for("main.configuracion", _anchor="aportes"))
 
         if monto <= 0:
             flash("El aporte debe ser mayor a cero.", "error")
-            return redirect(url_for("main.configuracion"))
+            return redirect(url_for("main.configuracion", _anchor="aportes"))
         if fecha > date.today():
             flash("La fecha del aporte no puede ser futura.", "error")
-            return redirect(url_for("main.configuracion"))
+            return redirect(url_for("main.configuracion", _anchor="aportes"))
 
         db.add_aporte(conn, fecha, monto)
         flash("Aporte agregado.", "success")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
 
     aportes = db.get_aportes(conn)
     wallets = db.get_wallets(conn)
@@ -397,7 +577,19 @@ def configuracion():
         egresos=_agrupar_por_mes(egresos, hoy),
         ingresos=_agrupar_por_mes(ingresos, hoy),
         ajustes=_ajustes_configurables(egresos, ingresos, hoy),
+        datos={
+            "egreso": {id_: _datos_movimiento("egreso", id_, m) for id_, m in egresos},
+            "ingreso": {id_: _datos_movimiento("ingreso", id_, m) for id_, m in ingresos},
+        },
+        conteo_categorias={
+            cat: sum(1 for _, m in egresos if m.categoria == cat) for cat in categorias_existentes
+        },
         cotizacion_usd=db.get_cotizacion(conn, "USD"),
+        controles=_controles_con_id(conn),
+        sync=respaldo.estado_sync(),
+        prefs=preferencias.cargar(),
+        carpeta_backups=db.BACKUP_DIR,
+        cantidad_backups=len(list(db.BACKUP_DIR.glob("*.db"))) if db.BACKUP_DIR.exists() else 0,
         total_aportes=sum(monto for _, _, monto in aportes),
         categorias_existentes=categorias_existentes,
     )
@@ -411,18 +603,18 @@ def editar_aporte(aporte_id):
         fecha = date.fromisoformat(request.form["fecha"])
     except (KeyError, ValueError):
         flash("Datos inválidos: revisá el monto y la fecha.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
 
     if monto <= 0:
         flash("El aporte debe ser mayor a cero.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
     if fecha > date.today():
         flash("La fecha del aporte no puede ser futura.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
 
     db.update_aporte(conn, aporte_id, fecha, monto)
     flash("Aporte actualizado.", "success")
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="aportes"))
 
 
 @bp.route("/configuracion/eliminar/<int:aporte_id>", methods=["POST"])
@@ -430,7 +622,7 @@ def eliminar_aporte(aporte_id):
     conn = db.get_db()
     db.delete_aporte(conn, aporte_id)
     flash("Aporte eliminado.", "success")
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="aportes"))
 
 
 @bp.route("/configuracion/egreso", methods=["POST"])
@@ -442,19 +634,21 @@ def agregar_egreso():
             aumento_pct, aumento_inicio, aumento_periodo_meses,
         ) = _parse_movimiento_form(request.form)
         moneda = _parse_moneda(request.form, conn)
+        hasta, aguinaldo = _parse_extras(request.form)
     except KeyError:
         flash("Datos inválidos: revisá los campos del egreso.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="gastos"))
     except ValueError as exc:
         flash(str(exc), "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="gastos"))
 
-    db.add_egreso(
+    nuevo_id = db.add_egreso(
         conn, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria,
         aumento_pct, aumento_inicio, aumento_periodo_meses, moneda,
     )
+    db.guardar_extras(conn, "egresos", nuevo_id, hasta, 0)
     flash("Egreso agregado.", "success")
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="gastos"))
 
 
 @bp.route("/configuracion/egreso/editar/<int:egreso_id>", methods=["POST"])
@@ -466,19 +660,21 @@ def editar_egreso(egreso_id):
             aumento_pct, aumento_inicio, aumento_periodo_meses,
         ) = _parse_movimiento_form(request.form)
         moneda = _parse_moneda(request.form, conn)
+        hasta, aguinaldo = _parse_extras(request.form)
     except KeyError:
         flash("Datos inválidos: revisá los campos del egreso.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="gastos"))
     except ValueError as exc:
         flash(str(exc), "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="gastos"))
 
     db.update_egreso(
         conn, egreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria,
         aumento_pct, aumento_inicio, aumento_periodo_meses, moneda,
     )
+    db.guardar_extras(conn, "egresos", egreso_id, hasta, 0)
     flash("Egreso actualizado.", "success")
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="gastos"))
 
 
 @bp.route("/configuracion/egreso/eliminar/<int:egreso_id>", methods=["POST"])
@@ -486,7 +682,7 @@ def eliminar_egreso(egreso_id):
     conn = db.get_db()
     db.delete_egreso(conn, egreso_id)
     flash("Egreso eliminado.", "success")
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="gastos"))
 
 
 _TABLAS_AJUSTE = {"egreso": ("egresos", db.get_egresos), "ingreso": ("ingresos", db.get_ingresos)}
@@ -539,7 +735,7 @@ def actualizar_cotizacion():
         flash("No se pudo consultar infodolar. Queda la última cotización guardada.", "error")
     else:
         flash(f"Dólar actualizado: ${formato_ar(nueva['valor'])}.", "success")
-    return redirect(url_for("main.configuracion", _anchor="cotizacion"))
+    return redirect(url_for("main.configuracion", _anchor="dolar"))
 
 
 @bp.route("/acerca")
@@ -562,6 +758,44 @@ def acerca():
         sistema=f"{platform.system()} {platform.release()}",
         cotizacion_usd=db.get_cotizacion(conn, "USD"),
     )
+
+
+_version_cache: dict = {"timestamp": 0.0, "datos": None}
+
+
+def _como_tupla(version: str) -> tuple[int, ...]:
+    try:
+        return tuple(int(p) for p in version.lstrip("v").split("."))
+    except ValueError:
+        return ()
+
+
+@bp.route("/api/version")
+def api_version():
+    """Última release publicada en GitHub, si es más nueva que esta. Se
+    cachea unas horas; sin conexión responde sin novedades."""
+    ahora = time.time()
+    if _version_cache["datos"] is None or ahora - _version_cache["timestamp"] > 6 * 3600:
+        nueva = None
+        try:
+            pedido = urllib.request.Request(
+                f"https://api.github.com/repos/{REPO_GITHUB}/releases?per_page=20",
+                headers={"User-Agent": "RuloFinanciero/1.0", "Accept": "application/vnd.github+json"},
+            )
+            with urllib.request.urlopen(pedido, timeout=8) as resp:
+                releases = json.load(resp)
+            candidatas = [
+                r for r in releases
+                if not r.get("draft") and not r.get("prerelease") and _como_tupla(r.get("tag_name", ""))
+            ]
+            mejor = max(candidatas, key=lambda r: _como_tupla(r["tag_name"]), default=None)
+            if mejor and _como_tupla(mejor["tag_name"]) > _como_tupla(__version__):
+                nueva = {"version": mejor["tag_name"].lstrip("v"), "url": mejor["html_url"]}
+        except (OSError, ValueError, KeyError, TypeError):
+            logger.info("No se pudo consultar la última versión", exc_info=True)
+            return jsonify({"actual": __version__, "nueva": None})
+        _version_cache.update(timestamp=ahora, datos={"actual": __version__, "nueva": nueva})
+    return jsonify(_version_cache["datos"])
 
 
 @bp.route("/api/ipc")
@@ -596,19 +830,21 @@ def agregar_ingreso():
             aumento_pct, aumento_inicio, aumento_periodo_meses,
         ) = _parse_movimiento_form(request.form)
         moneda = _parse_moneda(request.form, conn)
+        hasta, aguinaldo = _parse_extras(request.form)
     except KeyError:
         flash("Datos inválidos: revisá los campos del ingreso.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="ingresos"))
     except ValueError as exc:
         flash(str(exc), "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="ingresos"))
 
-    db.add_ingreso(
+    nuevo_id = db.add_ingreso(
         conn, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil,
         aumento_pct, aumento_inicio, aumento_periodo_meses, moneda,
     )
+    db.guardar_extras(conn, "ingresos", nuevo_id, hasta, aguinaldo)
     flash("Ingreso agregado.", "success")
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="ingresos"))
 
 
 @bp.route("/configuracion/ingreso/editar/<int:ingreso_id>", methods=["POST"])
@@ -620,19 +856,21 @@ def editar_ingreso(ingreso_id):
             aumento_pct, aumento_inicio, aumento_periodo_meses,
         ) = _parse_movimiento_form(request.form)
         moneda = _parse_moneda(request.form, conn)
+        hasta, aguinaldo = _parse_extras(request.form)
     except KeyError:
         flash("Datos inválidos: revisá los campos del ingreso.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="ingresos"))
     except ValueError as exc:
         flash(str(exc), "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="ingresos"))
 
     db.update_ingreso(
         conn, ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil,
         aumento_pct, aumento_inicio, aumento_periodo_meses, moneda,
     )
+    db.guardar_extras(conn, "ingresos", ingreso_id, hasta, aguinaldo)
     flash("Ingreso actualizado.", "success")
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="ingresos"))
 
 
 @bp.route("/configuracion/ingreso/eliminar/<int:ingreso_id>", methods=["POST"])
@@ -640,7 +878,273 @@ def eliminar_ingreso(ingreso_id):
     conn = db.get_db()
     db.delete_ingreso(conn, ingreso_id)
     flash("Ingreso eliminado.", "success")
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="ingresos"))
+
+
+def _ocurrencias_mes(conn, anio: int, mes: int, hoy: date) -> list[dict]:
+    """Cada ingreso/egreso que cae en el mes (aguinaldo incluido), con su
+    monto estimado y, si ya se cargó, el real."""
+    primero = date(anio, mes, 1)
+    ultimo = date(anio, mes, calendar.monthrange(anio, mes)[1])
+    filas = []
+    for tipo, items in (("ingreso", db.get_ingresos(conn)), ("egreso", db.get_egresos(conn))):
+        for id_, m in items:
+            derivados = [("", m)]
+            if tipo == "ingreso":
+                derivados += [("aguinaldo", a) for a in aguinaldos([m], primero, ultimo)]
+            for clave, item in derivados:
+                for fecha in fechas_del_movimiento(item, primero, ultimo):
+                    real = pago_registrado(item, fecha)
+                    filas.append({
+                        "tipo": tipo,
+                        "id": id_,
+                        "clave": clave,
+                        "fecha": fecha,
+                        "etiqueta": item.etiqueta,
+                        "categoria": item.categoria,
+                        "moneda": item.moneda if not clave else "ARS",
+                        "monto_original": item.monto,
+                        "estimado": monto_estimado(item, fecha),
+                        "real": real,
+                        "vencido": real is None and fecha < hoy,
+                    })
+    filas.sort(key=lambda f: (f["fecha"], f["tipo"] != "ingreso", f["etiqueta"]))
+    return filas
+
+
+@bp.route("/saldo-real", methods=["POST"])
+def cargar_saldo_real():
+    """Saldo real total del rulo a una fecha: la simulación se recalibra a
+    ese valor al cierre de ese día."""
+    volver = request.form.get("volver") or url_for("main.dashboard")
+    if not volver.startswith("/"):
+        volver = url_for("main.dashboard")
+    try:
+        monto = float(request.form["monto"])
+        fecha = date.fromisoformat(request.form.get("fecha") or date.today().isoformat())
+    except (KeyError, ValueError):
+        flash("Datos inválidos: revisá el saldo.", "error")
+        return redirect(volver)
+    if fecha > date.today():
+        flash("El saldo real no puede ser de una fecha futura.", "error")
+        return redirect(volver)
+    conn = db.get_db()
+    aportes = _aportes_pares(conn)
+    if not aportes or fecha < min(f for f, _ in aportes):
+        flash("La fecha tiene que ser posterior al primer aporte.", "error")
+        return redirect(volver)
+    db.add_control_saldo(conn, fecha, monto)
+    wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
+    control = next(
+        (c for c in _controles(conn, aportes, _egresos(conn), _ingresos(conn), wallets) if c["fecha"] == fecha), None
+    )
+    if control is not None:
+        dif = control["diferencia"]
+        detalle = "coincidía con la simulación" if abs(dif) < 1 else (
+            f"la simulación estaba {formato_pesos(abs(dif))} {'abajo' if dif > 0 else 'arriba'}"
+        )
+        flash(f"Saldo real guardado: {formato_pesos(monto)} ({detalle}).", "success")
+    return redirect(volver)
+
+
+@bp.route("/saldo-real/<int:control_id>/eliminar", methods=["POST"])
+def eliminar_saldo_real(control_id):
+    db.delete_control_saldo(db.get_db(), control_id)
+    flash("Control de saldo eliminado.", "success")
+    return redirect(url_for("main.configuracion", _anchor="aportes"))
+
+
+@bp.route("/preferencias/avisos", methods=["POST"])
+def guardar_avisos():
+    try:
+        minutos = int(request.form.get("avisos_minutos") or 0)
+    except ValueError:
+        minutos = 10
+    preferencias.guardar(
+        avisos_rulo=request.form.get("avisos_rulo") == "on",
+        avisos_minutos=max(0, min(minutos, 120)),
+        avisos_pagos=request.form.get("avisos_pagos") == "on",
+        segundo_plano=request.form.get("segundo_plano") == "on",
+    )
+    flash("Avisos guardados.", "success")
+    return redirect(url_for("main.configuracion", _anchor="avisos"))
+
+
+@bp.route("/preferencias/avisos/probar", methods=["POST"])
+def probar_aviso():
+    from .recordatorios import notificar
+
+    ok = notificar(f"{APP_NAME}: aviso de prueba", "Así te va a avisar cuándo mover la plata entre billeteras.")
+    flash("Te mandé un aviso de prueba." if ok else "Este sistema no permite mostrar avisos.", "success" if ok else "error")
+    return redirect(url_for("main.configuracion", _anchor="avisos"))
+
+
+@bp.route("/respaldo/descargar")
+def descargar_respaldo():
+    """Copia completa de la base, para guardar o llevar a otra PC."""
+    destino = Path(tempfile.mkdtemp()) / f"RuloFinanciero-respaldo-{date.today().isoformat()}.db"
+    respaldo.exportar(destino)
+    return send_file(destino, as_attachment=True, download_name=destino.name, mimetype="application/octet-stream")
+
+
+@bp.route("/respaldo/restaurar", methods=["POST"])
+def restaurar_respaldo():
+    archivo = request.files.get("archivo")
+    volver = url_for("main.configuracion", _anchor="respaldo")
+    if not archivo or not archivo.filename:
+        flash("Elegí un archivo de respaldo (.db).", "error")
+        return redirect(volver)
+    temporal = Path(tempfile.mkdtemp()) / "restaurar.db"
+    archivo.save(temporal)
+    try:
+        respaldo.importar(temporal, motivo="antes_de_restaurar")
+    except respaldo.RespaldoInvalido as exc:
+        flash(str(exc), "error")
+        return redirect(volver)
+    if respaldo.carpeta_sync() is not None:
+        respaldo.publicar()
+    flash("Respaldo restaurado. Tus datos anteriores quedaron guardados en la carpeta de backups.", "success")
+    return redirect(volver)
+
+
+@bp.route("/respaldo/movimientos.csv")
+def exportar_movimientos():
+    """Todos los ingresos y gastos, mes a mes (desde el arranque hasta dentro
+    de un año), en CSV para abrir con Excel (separador ; y coma decimal)."""
+    conn = db.get_db()
+    hoy = date.today()
+    fechas = [f for _, f, _ in db.get_aportes(conn)] + [
+        m.fecha for _, m in db.get_egresos(conn) + db.get_ingresos(conn) if m.fecha
+    ]
+    inicio = min(fechas + [hoy]).replace(day=1)
+    fin = sumar_meses(hoy, 12)
+    salida = io.StringIO()
+    escritor = csv.writer(salida, delimiter=";")
+    escritor.writerow(["Fecha", "Tipo", "Concepto", "Categoría", "Moneda", "Monto estimado", "Monto real", "Estado"])
+    mes = inicio
+    while mes <= fin:
+        for f in _ocurrencias_mes(conn, mes.year, mes.month, hoy):
+            escritor.writerow([
+                f["fecha"].strftime("%d/%m/%Y"),
+                "Ingreso" if f["tipo"] == "ingreso" else "Gasto",
+                f["etiqueta"],
+                f["categoria"] or ("" if f["tipo"] == "ingreso" else "Sin categoría"),
+                f["moneda"],
+                formato_ar(f["estimado"]),
+                formato_ar(f["real"]) if f["real"] is not None else "",
+                ("Cobrado" if f["tipo"] == "ingreso" else "Pagado") if f["real"] is not None else "Pendiente",
+            ])
+        mes = sumar_meses(mes, 1)
+    return Response(
+        "\ufeff" + salida.getvalue(),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=RuloFinanciero-movimientos-{hoy.isoformat()}.csv"},
+    )
+
+
+@bp.route("/respaldo/sync", methods=["POST"])
+def guardar_sync():
+    """Configura (o desactiva) la carpeta compartida para sincronizar."""
+    volver = url_for("main.configuracion", _anchor="respaldo")
+    carpeta = (request.form.get("carpeta") or "").strip()
+    if not carpeta:
+        preferencias.guardar(sync_carpeta="", sync_ultimo_hash="", sync_pendiente=False)
+        flash("Sincronización desactivada.", "success")
+        return redirect(volver)
+    ruta = Path(carpeta).expanduser()
+    if not ruta.is_dir():
+        flash(f"No encuentro la carpeta {carpeta}. Revisá la ruta.", "error")
+        return redirect(volver)
+    preferencias.guardar(sync_carpeta=str(ruta), sync_ultimo_hash="", sync_pendiente=False)
+    if (ruta / respaldo.ARCHIVO_SYNC).exists():
+        mensaje = respaldo.traer_si_cambio(forzar=True)
+        flash(mensaje or "Sincronización activada.", "success")
+    else:
+        respaldo.publicar()
+        flash("Sincronización activada: tus datos quedaron en la carpeta compartida.", "success")
+    return redirect(volver)
+
+
+@bp.route("/respaldo/sync/ahora", methods=["POST"])
+def sincronizar_ahora():
+    mensaje = respaldo.traer_si_cambio(forzar=True)
+    if mensaje is None or mensaje == "publicada":
+        mensaje = "Todo sincronizado." if respaldo.publicar() else "No se pudo acceder a la carpeta compartida."
+    flash(mensaje, "success")
+    return redirect(url_for("main.configuracion", _anchor="respaldo"))
+
+
+@bp.route("/mes")
+def este_mes():
+    hoy = date.today()
+    try:
+        anio, mes = (int(x) for x in request.args.get("mes", f"{hoy.year}-{hoy.month}").split("-"))
+        date(anio, mes, 1)
+    except ValueError:
+        anio, mes = hoy.year, hoy.month
+    conn = db.get_db()
+    filas = _ocurrencias_mes(conn, anio, mes, hoy)
+
+    def total(tipo, campo):
+        return sum((f["real"] if campo == "hecho" else f["estimado"]) for f in filas
+                   if f["tipo"] == tipo and (campo != "hecho" or f["real"] is not None))
+
+    hechos = [f for f in filas if f["real"] is not None]
+    anterior = sumar_meses(date(anio, mes, 1), -1)
+    siguiente = sumar_meses(date(anio, mes, 1), 1)
+    return render_template(
+        "mes.html",
+        filas=filas,
+        hoy=hoy,
+        nombre_mes=f"{MESES[mes - 1]} {anio}",
+        es_mes_actual=(anio, mes) == (hoy.year, hoy.month),
+        mes_anterior=f"{anterior.year}-{anterior.month}",
+        mes_siguiente=f"{siguiente.year}-{siguiente.month}",
+        mes_param=f"{anio}-{mes}",
+        ingresos_estimados=total("ingreso", "estimado"),
+        ingresos_cobrados=total("ingreso", "hecho"),
+        egresos_estimados=total("egreso", "estimado"),
+        egresos_pagados=total("egreso", "hecho"),
+        pendientes=sum(1 for f in filas if f["real"] is None),
+        vencidos=sum(1 for f in filas if f["vencido"]),
+        diferencia=sum((f["real"] - f["estimado"]) * (1 if f["tipo"] == "ingreso" else -1) for f in hechos),
+    )
+
+
+@bp.route("/mes/pago", methods=["POST"])
+def registrar_pago():
+    """Marca una ocurrencia como pagada/cobrada con su monto real."""
+    tabla = {"egreso": "egresos", "ingreso": "ingresos"}.get(request.form.get("tipo"))
+    volver = url_for("main.este_mes", mes=request.form.get("mes"))
+    try:
+        movimiento_id = int(request.form["id"])
+        fecha = date.fromisoformat(request.form["fecha"])
+        clave = request.form.get("clave", "")
+        monto = float(request.form["monto"])
+    except (KeyError, ValueError):
+        flash("Datos inválidos: revisá el monto.", "error")
+        return redirect(volver)
+    if tabla is None or clave not in ("", "aguinaldo") or monto < 0:
+        flash("Datos inválidos.", "error")
+        return redirect(volver)
+    db.guardar_pago(db.get_db(), tabla, movimiento_id, fecha, clave, monto)
+    flash(("Cobro" if tabla == "ingresos" else "Pago") + f" registrado: {formato_pesos(monto)}.", "success")
+    return redirect(volver)
+
+
+@bp.route("/mes/pago/deshacer", methods=["POST"])
+def deshacer_pago():
+    tabla = {"egreso": "egresos", "ingreso": "ingresos"}.get(request.form.get("tipo"))
+    volver = url_for("main.este_mes", mes=request.form.get("mes"))
+    try:
+        movimiento_id = int(request.form["id"])
+        fecha = date.fromisoformat(request.form["fecha"])
+    except (KeyError, ValueError):
+        return redirect(volver)
+    if tabla:
+        db.eliminar_pago(db.get_db(), tabla, movimiento_id, fecha, request.form.get("clave", ""))
+        flash("Volvió a pendiente: se usa el monto estimado.", "success")
+    return redirect(volver)
 
 
 @bp.route("/historial")
@@ -648,13 +1152,14 @@ def historial():
     conn = db.get_db()
     aportes = _aportes_pares(conn)
     if not aportes:
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     egresos = _egresos(conn)
     ingresos = _ingresos(conn)
+    ajustes = _ajustes_saldo(conn, aportes, egresos, ingresos, wallets)
 
-    summaries = simulate(aportes, egresos, ingresos, date.today(), wallets)
+    summaries = simulate(aportes, egresos, ingresos, date.today(), wallets, ajustes)
     capital_series = [
         {"date": s.date.isoformat(), "capital_cierre": s.capital_cierre} for s in summaries
     ]
@@ -668,13 +1173,14 @@ def exportar_historial():
     conn = db.get_db()
     aportes = _aportes_pares(conn)
     if not aportes:
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     egresos = _egresos(conn)
     ingresos = _ingresos(conn)
+    ajustes = _ajustes_saldo(conn, aportes, egresos, ingresos, wallets)
 
-    summaries = simulate(aportes, egresos, ingresos, date.today(), wallets)
+    summaries = simulate(aportes, egresos, ingresos, date.today(), wallets, ajustes)
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -704,7 +1210,7 @@ def exportar_historial():
 
 @bp.route("/billeteras")
 def billeteras():
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="billeteras"))
 
 
 @bp.route("/billeteras/<wallet_id>", methods=["POST"])
@@ -719,24 +1225,24 @@ def actualizar_billetera(wallet_id):
         monto_maximo = float(monto_maximo_raw) if monto_maximo_raw else None
     except (KeyError, ValueError):
         flash("Datos inválidos: revisá los campos de la billetera.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="billeteras"))
 
     if tna < 0:
         flash("La TNA no puede ser negativa.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="billeteras"))
     if monto_minimo < 0:
         flash("El piso no puede ser negativo.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="billeteras"))
     if monto_maximo is not None and monto_maximo <= monto_minimo:
         flash("El techo debe ser mayor al piso.", "error")
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="billeteras"))
 
     activo = request.form.get("activo") == "on"
     db.update_wallet(
         conn, wallet_id, tna, capture_time, payout_time, activo, monto_minimo, monto_maximo
     )
     flash("Billetera actualizada.", "success")
-    return redirect(url_for("main.configuracion"))
+    return redirect(url_for("main.configuracion", _anchor="billeteras"))
 
 
 @bp.route("/graficos")
@@ -744,69 +1250,22 @@ def graficos():
     conn = db.get_db()
     aportes = _aportes_pares(conn)
     if not aportes:
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     egresos = _egresos(conn)
     ingresos = _ingresos(conn)
+    ajustes = _ajustes_saldo(conn, aportes, egresos, ingresos, wallets)
 
-    summaries = simulate(aportes, egresos, ingresos, date.today(), wallets)
+    summaries = simulate(aportes, egresos, ingresos, date.today(), wallets, ajustes)
 
-    # Serie de capital + desglose aportado vs. ganancia generada, para el
-    # área apilada "aportes vs. ganancia".
-    aportes_ordenados = sorted(aportes, key=lambda a: a[0])
-    capital_series = []
-    aporte_acumulado = 0.0
-    idx = 0
-    for s in summaries:
-        while idx < len(aportes_ordenados) and aportes_ordenados[idx][0] <= s.date:
-            aporte_acumulado += aportes_ordenados[idx][1]
-            idx += 1
-        capital_series.append(
-            {
-                "date": s.date.isoformat(),
-                "capital_cierre": s.capital_cierre,
-                "aportado": aporte_acumulado,
-                "ganancia": s.capital_cierre - aporte_acumulado,
-            }
-        )
-
-    rendimiento_por_id = {w.id: 0.0 for w in wallets}
-    for s in summaries:
-        for c in s.captures:
-            rendimiento_por_id[c.wallet_id] += c.rendimiento
-
-    # Lista (no dict) para preservar el orden natural de las billeteras: Flask
-    # serializa dicts con sort_keys=True en `tojson`, lo que reordenaría alfabéticamente.
-    rendimiento_por_billetera = [
-        {"nombre": w.name, "rendimiento": rendimiento_por_id[w.id]} for w in wallets
-    ]
-
-    # Comparación "quieto" (sin rotar, interés simple, sin capitalizar) contra
-    # el resultado real y compuesto del rulo, para dimensionar la ventaja de rotar.
     hoy = date.today()
-    principal_total = sum(monto for _, monto in aportes)
-    dias_totales = (hoy - min(fecha for fecha, _ in aportes)).days + 1
-    capital_final_rulo = summaries[-1].capital_cierre if summaries else principal_total
-    comparacion = [
-        {
-            "nombre": w.name,
-            "capital_final": capital_simple(aportes, w.default_tna, hoy, egresos, ingresos),
-        }
-        for w in wallets
-        if w.activo
-    ]
-    comparacion.append({"nombre": "Rulo (real)", "capital_final": capital_final_rulo})
-
     activas = [w for w in wallets if w.activo]
-    tea_rulo = tasa_efectiva_anual(principal_total, capital_final_rulo, dias_totales)
+    tea_rulo = tea_del_rulo(summaries)
     tna_promedio = sum(w.default_tna for w in activas) / len(activas) if activas else 0.0
 
     return render_template(
         "graficos.html",
-        capital_series=capital_series,
-        rendimiento_por_billetera=rendimiento_por_billetera,
-        comparacion=comparacion,
         tea_rulo=tea_rulo,
         tna_promedio=tna_promedio,
         flujo_mensual=_flujo_mensual(aportes, egresos, ingresos, hoy),
@@ -819,11 +1278,12 @@ def proyeccion():
     conn = db.get_db()
     aportes = _aportes_pares(conn)
     if not aportes:
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     egresos = _egresos(conn)
     ingresos = _ingresos(conn)
+    ajustes = _ajustes_saldo(conn, aportes, egresos, ingresos, wallets)
 
     hoy = date.today()
     default_objetivo = hoy + timedelta(days=30)
@@ -863,7 +1323,7 @@ def proyeccion():
 
     principal_total = sum(monto for _, monto in aportes)
     summaries = simulate(
-        aportes + aportes_planeados, egresos, ingresos, fecha_objetivo, wallets
+        aportes + aportes_planeados, egresos, ingresos, fecha_objetivo, wallets, ajustes
     )
     capital_hoy = next((s.capital_cierre for s in summaries if s.date == hoy), principal_total)
     capital_final = summaries[-1].capital_cierre if summaries else principal_total
@@ -873,12 +1333,12 @@ def proyeccion():
     # descontados — para dimensionar la ventaja de rotar también a futuro.
     mejor_tna = max((w.default_tna for w in wallets if w.activo), default=0.0)
     capital_quieto = capital_simple(
-        aportes + aportes_planeados, mejor_tna, fecha_objetivo, egresos, ingresos
+        _con_ajustes(aportes, ajustes) + aportes_planeados, mejor_tna, fecha_objetivo, egresos, ingresos
     )
     ventaja_rulo_proyectada = capital_final - capital_quieto
 
     # Misma plata sin ningún interés: muestra cuánto aporta el rulo en sí.
-    sin_rulo = capital_sin_rendimiento(aportes + aportes_planeados, egresos, ingresos, fecha_objetivo)
+    sin_rulo = capital_sin_rendimiento(_con_ajustes(aportes, ajustes) + aportes_planeados, egresos, ingresos, fecha_objetivo)
     capital_sin_rulo_final = sin_rulo.get(fecha_objetivo, principal_total)
 
     capital_series = [
@@ -932,6 +1392,7 @@ def proyeccion():
         capital_quieto=capital_quieto,
         ventaja_rulo_proyectada=ventaja_rulo_proyectada,
         capital_sin_rulo_final=capital_sin_rulo_final,
+        alertas=_alertas(conn, {s.date: s.capital_cierre for s in summaries}, hoy, egresos, ingresos),
         aporte_del_rulo=capital_final - capital_sin_rulo_final,
     )
 
@@ -1010,20 +1471,20 @@ def recuperacion():
     conn = db.get_db()
     aportes = _aportes_pares(conn)
     if not aportes:
-        return redirect(url_for("main.configuracion"))
+        return redirect(url_for("main.configuracion", _anchor="aportes"))
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
     egresos = _egresos(conn)
     ingresos = _ingresos(conn)
+    ajustes = _ajustes_saldo(conn, aportes, egresos, ingresos, wallets)
 
     hoy = date.today()
     inicio_rulo = min(fecha for fecha, _ in aportes)
     horizonte_anios = 5
 
-    principal_total = sum(monto for _, monto in aportes)
-    dias_totales = (hoy - inicio_rulo).days + 1
-    capital_hoy = simulate(aportes, egresos, ingresos, hoy, wallets)[-1].capital_cierre
-    tea_lograda = tasa_efectiva_anual(principal_total, capital_hoy, dias_totales)
+    historial_hoy = simulate(aportes, egresos, ingresos, hoy, wallets, ajustes)
+    capital_hoy = historial_hoy[-1].capital_cierre
+    tea_lograda = tea_del_rulo(historial_hoy)
 
     etiqueta = ""
     monto_gasto = None
@@ -1054,7 +1515,7 @@ def recuperacion():
         # aportes, ingresos y egresos tal cual quedaron cargados) — el
         # checkbox de "cálculo crudo" solo afecta la proyección posterior,
         # no este punto de partida.
-        historial = simulate(aportes, egresos, ingresos, max(fecha_gasto, hoy), wallets)
+        historial = simulate(aportes, egresos, ingresos, max(fecha_gasto, hoy), wallets, ajustes)
         capital_base = next(s.capital_cierre for s in historial if s.date == fecha_gasto)
 
         # Desde el día del gasto se reinicia la simulación con ese capital
@@ -1119,7 +1580,8 @@ def patrimonio():
         wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
         egresos = _egresos(conn)
         ingresos = _ingresos(conn)
-        summaries = simulate(aportes, egresos, ingresos, date.today(), wallets)
+        ajustes = _ajustes_saldo(conn, aportes, egresos, ingresos, wallets)
+        summaries = simulate(aportes, egresos, ingresos, date.today(), wallets, ajustes)
         capital_rulo = summaries[-1].capital_cierre if summaries else 0.0
 
     inversiones = [

@@ -7,54 +7,95 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='icono.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script>
+    // Siempre arranca en oscuro. Si se elige claro con el botón Tema, dura
+    // mientras la ventana esté abierta (sessionStorage), no entre aperturas.
     (function () {
-      var tema = localStorage.getItem("theme");
-      if (tema === "light" || tema === "dark") {
-        document.documentElement.dataset.theme = tema;
-      }
+      var tema = "dark";
+      try {
+        tema = sessionStorage.getItem("theme") === "light" ? "light" : "dark";
+        localStorage.removeItem("theme");
+      } catch (e) {}
+      document.documentElement.dataset.theme = tema;
     })();
   </script>
 </head>
 <body>
-  <nav>
-    <a class="brand" href="{{ url_for('main.dashboard') }}">
-      <img src="{{ url_for('static', filename='icono.png') }}" alt="" width="22" height="22">
-      <span>{{ app_name }}</span>
-      <span class="version-badge" title="Versión {{ app_version }}">v{{ app_version }}</span>
-    </a>
-    <button type="button" class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="nav-links">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="nav-links" id="nav-links">
-      <a href="{{ url_for('main.dashboard') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.dashboard' }}>Dashboard</a>
-      <a href="{{ url_for('main.historial') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.historial' }}>Historial</a>
-      <a href="{{ url_for('main.graficos') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.graficos' }}>Gráficos</a>
-      <a href="{{ url_for('main.proyeccion') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.proyeccion' }}>Proyección</a>
-      <a href="{{ url_for('main.calculadora') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.calculadora' }}>Calculadora</a>
-      <a href="{{ url_for('main.recuperacion') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.recuperacion' }}>Recuperación</a>
-      <a href="{{ url_for('main.patrimonio') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.patrimonio' }}>Patrimonio</a>
-      <a href="{{ url_for('main.configuracion') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.configuracion' }}>Configuración</a>
-      <a href="{{ url_for('main.acerca') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.acerca' }}>Acerca de</a>
+{%- set iconos = {
+  "dashboard": '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  "graficos": '<path d="M4 20V11M10 20V5M16 20v-7M21 20H3"/>',
+  "proyeccion": '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+  "historial": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  "mes": '<rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="M8.5 15l2.3 2.3 4.7-4.6"/>',
+  "calculadora": '<rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M8.5 7h7M8.5 12h1.5M14 12h1.5M8.5 16h1.5M14 16h1.5"/>',
+  "recuperacion": '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>',
+  "patrimonio": '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14.5h2"/>',
+  "configuracion": '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/>',
+  "acerca": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+} %}
+{%- macro enlace(endpoint, texto, icono) -%}
+  <a class="sidebar-link" href="{{ url_for('main.' ~ endpoint) }}" {{ 'aria-current="page"'|safe if request.endpoint == 'main.' ~ endpoint }}>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ iconos[icono]|safe }}</svg>
+    {{ texto }}
+  </a>
+{%- endmacro %}
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <a class="sidebar-brand" href="{{ url_for('main.dashboard') }}">
+        <img src="{{ url_for('static', filename='icono.png') }}" alt="" width="30" height="30">
+        <span>{{ app_name }}</span>
+      </a>
+      <button type="button" class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="nav-links" aria-label="Abrir menú">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
     </div>
-    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambiar tema claro/oscuro" title="Cambiar tema claro/oscuro">
-      <span class="theme-toggle-icon" aria-hidden="true">◐</span>
-    </button>
-  </nav>
-  <main>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="flash-list">
-          {% for category, message in messages %}
-            <p class="flash flash-{{ category }}">
-              <span>{{ message }}</span>
-              <button type="button" class="flash-close" aria-label="Cerrar mensaje">&times;</button>
-            </p>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+    <nav class="sidebar-nav" id="nav-links" aria-label="Secciones">
+      <span class="sidebar-group">Principal</span>
+      {{ enlace("dashboard", "Resumen", "dashboard") }}
+      {{ enlace("graficos", "Gráficos", "graficos") }}
+      {{ enlace("proyeccion", "Proyección", "proyeccion") }}
+
+      <span class="sidebar-group">Movimientos</span>
+      {{ enlace("este_mes", "Este mes", "mes") }}
+      {{ enlace("historial", "Historial", "historial") }}
+
+      <span class="sidebar-group">Herramientas</span>
+      {{ enlace("calculadora", "Calculadora", "calculadora") }}
+      {{ enlace("recuperacion", "Recuperación", "recuperacion") }}
+      {{ enlace("patrimonio", "Patrimonio", "patrimonio") }}
+
+      <div class="sidebar-spacer"></div>
+      {{ enlace("configuracion", "Configuración", "configuracion") }}
+      {{ enlace("acerca", "Acerca de", "acerca") }}
+      <a class="aviso-version" id="aviso-version" href="#" target="_blank" rel="noopener" hidden>
+        <span class="aviso-version-punto" aria-hidden="true"></span>
+        <span>Nueva versión <strong data-version-nueva></strong> disponible</span>
+      </a>
+      <div class="sidebar-footer">
+        <span title="Versión {{ app_version }}">Versión {{ app_version }}</span>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambiar tema claro/oscuro" title="Cambiar tema claro/oscuro">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
+          Tema
+        </button>
+      </div>
+    </nav>
+  </aside>
+  <main class="app-main">
     {% block content %}{% endblock %}
   </main>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</div>
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-list" role="status">
+      {% for category, message in messages %}
+        <p class="flash flash-{{ category }}">
+          <span>{{ message }}</span>
+          <button type="button" class="flash-close" aria-label="Cerrar mensaje">&times;</button>
+        </p>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+<script src="{{ url_for('static', filename='app.js') }}" data-api-version="{{ url_for('main.api_version') }}"></script>
 </body>
 </html>

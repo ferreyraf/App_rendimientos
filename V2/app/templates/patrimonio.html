@@ -6,19 +6,19 @@
 <div class="kpi-row">
   <div class="stat-tile">
     <p class="stat-label">Capital en el rulo</p>
-    <p class="stat-value">${{ capital_rulo|ar }}</p>
+    <p class="stat-value">{{ capital_rulo|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Total invertido (fuera del rulo)</p>
-    <p class="stat-value">${{ total_invertido|ar }}</p>
+    <p class="stat-value">{{ total_invertido|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Patrimonio total</p>
-    <p class="stat-value positivo">${{ patrimonio_total|ar }}</p>
+    <p class="stat-value positivo">{{ patrimonio_total|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Rendimiento diario estimado (inversiones)</p>
-    <p class="stat-value positivo">${{ rendimiento_diario_estimado|ar }}</p>
+    <p class="stat-value positivo">{{ rendimiento_diario_estimado|pesos }}</p>
   </div>
 </div>
 
@@ -41,7 +41,7 @@
             <td><input type="text" form="inversion-{{ inv.id }}" name="etiqueta" value="{{ inv.etiqueta }}" required></td>
             <td><input type="number" step="0.01" min="0.01" form="inversion-{{ inv.id }}" name="monto" value="{{ inv.monto }}" required></td>
             <td><input type="number" step="0.01" min="0" form="inversion-{{ inv.id }}" name="tna" value="{{ inv.tna }}"> %</td>
-            <td>${{ inv.rendimiento_diario|ar }}</td>
+            <td>{{ inv.rendimiento_diario|pesos }}</td>
             <td>
               <button type="submit" form="inversion-{{ inv.id }}" formaction="{{ url_for('main.editar_inversion', inversion_id=inv.id) }}">Guardar</button>
               <button type="submit" form="inversion-{{ inv.id }}" formaction="{{ url_for('main.eliminar_inversion', inversion_id=inv.id) }}">Eliminar</button>
@@ -54,7 +54,7 @@
       </tbody>
       </table>
     </div>
-    <p class="total">Total invertido: <strong>${{ total_invertido|ar }}</strong></p>
+    <p class="total">Total invertido: <strong>{{ total_invertido|pesos }}</strong></p>
   </section>
 
   <section class="chart-card">

@@ -36,11 +36,11 @@
 <div class="kpi-row">
   <div class="stat-tile">
     <p class="stat-label">Capital final ({{ fecha_objetivo.strftime("%d/%m/%Y") }})</p>
-    <p class="stat-value">${{ capital_final|ar }}</p>
+    <p class="stat-value">{{ capital_final|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Rendimiento generado</p>
-    <p class="stat-value {{ 'positivo' if rendimiento >= 0 else 'negativo' }}">${{ rendimiento|ar }}</p>
+    <p class="stat-value {{ 'positivo' if rendimiento >= 0 else 'negativo' }}">{{ rendimiento|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">TEA implícita</p>

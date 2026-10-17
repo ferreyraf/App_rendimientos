@@ -1,195 +1,202 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ hoy.strftime("%d/%m/%Y") }}</h1>
-<p class="subtitle">Capturas de hoy, calculadas por la simulación del rulo</p>
+<header class="page-header">
+  <div>
+    <h1>Resumen</h1>
+    <p class="subtitle">{{ dia_semana }} {{ hoy.strftime("%d/%m/%Y") }}</p>
+  </div>
+  <div class="header-acciones">
+    {% if cotizacion_usd %}
+      <span class="chip">Dólar blue Cba <strong>{{ cotizacion_usd.valor|pesos(0) }}</strong></span>
+    {% endif %}
+    <a class="boton boton-primario" href="{{ url_for('main.configuracion', _anchor='gastos') }}">+ Agregar movimiento</a>
+  </div>
+</header>
 
-<div class="kpi-row">
-  <div class="stat-tile">
-    <p class="stat-label">Patrimonio total (rulo + <a href="{{ url_for('main.patrimonio') }}">inversiones</a>)</p>
-    <p class="stat-value">${{ patrimonio_total|ar }}</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">Ganancia neta acumulada</p>
-    <p class="stat-value {{ 'positivo' if ganancia_neta >= 0 else 'negativo' }}">${{ ganancia_neta|ar }}</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">TEA lograda por el rulo</p>
-    <p class="stat-value">{{ tea_lograda|ar }}%</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">Ganancia extra por rotar vs. la mejor billetera quieta</p>
-    <p class="stat-value {{ 'positivo' if ventaja_rulo >= 0 else 'negativo' }}">${{ ventaja_rulo|ar }}</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">Total aportado</p>
-    <p class="stat-value">${{ total_aportado|ar }}</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">Total ingresos (sueldo y otros)</p>
-    <p class="stat-value positivo">${{ total_ingresos|ar }}</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">Total egresos</p>
-    <p class="stat-value negativo">${{ total_egresos|ar }}</p>
-  </div>
-</div>
+{% include "_alertas.html" %}
 
-<section class="chart-card">
-  <p class="subtitle">Vencimiento de impuestos</p>
-  <p class="total">
-    Próximo vencimiento: <strong>{{ vencimiento.strftime("%d/%m/%Y") }}</strong>
-    — faltan <strong>{{ dias_para_vencimiento }} día(s)</strong>
-  </p>
+<section class="hero-card" aria-labelledby="capital-hoy">
+  <div class="hero-principal">
+    <span id="capital-hoy" class="hero-label">Capital en el rulo hoy</span>
+    {% set entero, decimales = (capital_hoy|pesos).split(",") %}
+    <span class="hero-valor {{ 'negativo' if capital_hoy < 0 }}"><span data-contar>{{ entero }}</span><span class="hero-decimales">,{{ decimales }}</span></span>
+    <span class="hero-detalle">
+      Proyectado al {{ fin_mes.strftime("%d/%m") }}: <strong>{{ capital_fin_mes|pesos(0) }}</strong>
+      {% if rendimiento_resto_mes > 0 %}<span class="positivo">+{{ rendimiento_resto_mes|pesos(0) }} de rendimiento</span>{% endif %}
+    </span>
+    <details class="saldo-real">
+      <summary>
+        {% if ultimo_control %}
+          Último saldo real: {{ ultimo_control.fecha.strftime("%d/%m") }}
+          {%- if ultimo_control.diferencia|abs >= 1 %} · la simulación estaba {{ ultimo_control.diferencia|abs|pesos(0) }} {{ 'abajo' if ultimo_control.diferencia > 0 else 'arriba' }}{% endif %}
+          · <span class="link">cargar otro</span>
+        {% else %}
+          <span class="link">Cargar saldo real</span> para recalibrar
+        {% endif %}
+      </summary>
+      <form method="post" action="{{ url_for('main.cargar_saldo_real') }}" class="saldo-real-form">
+        <input type="hidden" name="volver" value="{{ url_for('main.dashboard') }}">
+        <div class="campo">
+          <label for="saldo-real-monto">Total en tus billeteras</label>
+          <input id="saldo-real-monto" type="number" name="monto" step="0.01" min="0" required placeholder="Ej. 780000">
+        </div>
+        <div class="campo">
+          <label for="saldo-real-fecha">Al cierre del</label>
+          <input id="saldo-real-fecha" type="date" name="fecha" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required>
+        </div>
+        <button type="submit">Guardar</button>
+      </form>
+    </details>
+  </div>
+  <div class="hero-comparacion">
+    <span class="hero-label">A {{ nombre_horizonte }}</span>
+    <div class="fila-dato"><span>Con rulo</span><strong>{{ con_rulo_horizonte|pesos(0) }}</strong></div>
+    <div class="fila-dato secundaria"><span>Sin rulo</span><span>{{ sin_rulo_horizonte|pesos(0) }}</span></div>
+    <div class="fila-dato total-rulo"><span>Lo que suma el rulo</span><strong class="positivo">+{{ (con_rulo_horizonte - sin_rulo_horizonte)|pesos(0) }}</strong></div>
+  </div>
+</section>
+
+<section class="kpi-row" aria-label="Este mes en números">
+  <div class="stat-tile">
+    <p class="stat-label">Ingresos de {{ nombre_mes }}</p>
+    <p class="stat-value positivo" data-contar>+{{ total_ingresos_mes|pesos(0) }}</p>
+    <p class="stat-note">{{ ingresos_mes|map(attribute='etiqueta')|unique|join(' + ') or 'Sin ingresos cargados' }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Egresos de {{ nombre_mes }}</p>
+    <p class="stat-value negativo" data-contar>−{{ total_egresos_mes|pesos(0) }}</p>
+    <p class="stat-note">{{ egresos_mes|length }} movimiento{{ 's' if egresos_mes|length != 1 }}</p>
+  </div>
+  <div class="stat-tile">
+    {% set saldo_mes = total_ingresos_mes - total_egresos_mes %}
+    <p class="stat-label">Saldo de {{ nombre_mes }}</p>
+    <p class="stat-value {{ 'positivo' if saldo_mes >= 0 else 'negativo' }}" data-contar>{{ '+' if saldo_mes >= 0 else '−' }}{{ saldo_mes|abs|pesos(0) }}</p>
+    <p class="stat-note">{{ 'Te sobra para sumar al rulo' if saldo_mes >= 0 else 'Lo cubre el capital del rulo' }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Próximo ajuste</p>
+    {% if proximo_ajuste %}
+      <p class="stat-value">{{ proximo_ajuste.etiqueta }} · {{ nombre_mes_ajuste }}</p>
+      <p class="stat-note">{{ '+' if proximo_ajuste.pct >= 0 else '' }}{{ proximo_ajuste.pct|ar }}%{{ '' if proximo_ajuste.real else ' estimado' }} → {{ proximo_ajuste.monto|pesos(0) }}</p>
+    {% else %}
+      <p class="stat-value">—</p>
+      <p class="stat-note">Ningún gasto tiene aumento cargado</p>
+    {% endif %}
+  </div>
 </section>
 
 <div class="two-col">
-  <section class="chart-card">
-    <h2>Ingresos vs. egresos (mes actual)</h2>
-    <div class="pie-chart-wrap">
-      <canvas id="ingresosEgresosChart" role="img" aria-label="Ingresos vs. egresos del mes actual"></canvas>
+  <section class="chart-card" aria-labelledby="categorias">
+    <div class="card-titulo">
+      <h2 id="categorias">Gastos de {{ nombre_mes }} por categoría</h2>
+      <span class="subtitle">{{ total_egresos_mes|pesos(0) }}</span>
     </div>
-    <details>
-      <summary class="subtitle">Ver como tabla</summary>
-      <table>
-        <thead><tr><th></th><th>Monto</th></tr></thead>
-        <tbody>
-          <tr><td>Ingresos</td><td>${{ total_ingresos_mes|ar }}</td></tr>
-          <tr><td>Egresos</td><td>${{ total_egresos_mes|ar }}</td></tr>
-        </tbody>
-      </table>
-    </details>
+    {% for item in egresos_por_categoria %}
+      <div class="barra-categoria">
+        <div class="barra-categoria-texto">
+          <span>{{ item.categoria }}</span>
+          {% if item.monto %}
+            <span><strong>{{ item.monto|pesos(0) }}</strong> <span class="muted">{{ item.pct|round|int }}%</span></span>
+          {% else %}
+            <span class="muted">Sin cargar</span>
+          {% endif %}
+        </div>
+        <div class="barra-pista"><div class="barra-relleno" style="width: {{ [item.pct, 100]|min }}%"></div></div>
+      </div>
+    {% endfor %}
   </section>
 
-  <section class="chart-card">
-    <h2>Egresos por categoría (mes actual)</h2>
-    {% if egresos_por_categoria %}
-    <div class="pie-chart-wrap">
-      <canvas id="categoriasChart" role="img" aria-label="Egresos del mes actual agrupados por categoría"></canvas>
+  <section class="chart-card" aria-labelledby="proximos">
+    <div class="card-titulo">
+      <h2 id="proximos">Próximos movimientos</h2>
+      <a href="{{ url_for('main.configuracion', _anchor='gastos') }}">Ver todos</a>
     </div>
-    <details>
-      <summary class="subtitle">Ver como tabla</summary>
-      <table>
-        <thead><tr><th>Categoría</th><th>Monto</th></tr></thead>
-        <tbody>
-          {% for item in egresos_por_categoria %}
-            <tr><td>{{ item.categoria }}</td><td>${{ item.monto|ar }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </details>
+    {% for m in proximos %}
+      <div class="fila-movimiento">
+        <span class="muted">{{ m.fecha.strftime("%d/%m") }}</span>
+        <span class="fila-movimiento-etiqueta">
+          {{ m.etiqueta }}
+          {% if m.moneda == "USD" %}<span class="badge">US{{ m.monto_original|pesos(0) }}</span>{% endif %}
+        </span>
+        <span class="{{ 'positivo' if m.monto > 0 else 'negativo' }}">{{ '+' if m.monto > 0 else '−' }}{{ m.monto|abs|pesos(0) }}</span>
+      </div>
     {% else %}
-    <p class="subtitle">No hay egresos cargados para este mes.</p>
-    {% endif %}
+      <p class="subtitle">No hay movimientos en las próximas semanas.</p>
+    {% endfor %}
   </section>
 </div>
 
-{% if actual or proxima %}
+<h2>El rulo hoy</h2>
 <div class="two-col">
-  {% if actual %}
   <section class="chart-card">
-    <p class="subtitle">Liquidez</p>
-    <p class="total">
-      Tu dinero está ahora en <strong>{{ actual.wallet_name }}</strong>
-      (desde las {{ actual.timestamp.strftime("%H:%M") }}{% if actual.timestamp.date() != hoy %} del {{ actual.timestamp.strftime("%d/%m") }}{% endif %})
-    </p>
+    <dl class="lista-datos">
+      {% if actual %}
+        <div><dt>Tu plata está en</dt><dd><strong>{{ actual.wallet_name }}</strong> desde las {{ actual.timestamp.strftime("%H:%M") }}{% if actual.timestamp.date() != hoy %} del {{ actual.timestamp.strftime("%d/%m") }}{% endif %}</dd></div>
+      {% endif %}
+      {% if proxima %}
+        <div><dt>Próxima acción</dt><dd>Mover a <strong>{{ proxima.wallet_name }}</strong> a las {{ proxima.timestamp.strftime("%H:%M") }}{% if proxima.timestamp.date() != hoy %} ({{ proxima.timestamp.strftime("%d/%m") }}){% endif %} · en {{ proxima.horas }}h {{ proxima.minutos }}min</dd></div>
+      {% endif %}
+      <div><dt>Vencimiento de impuestos</dt><dd>{{ vencimiento.strftime("%d/%m/%Y") }} · faltan {{ dias_para_vencimiento }} día{{ 's' if dias_para_vencimiento != 1 }}</dd></div>
+    </dl>
   </section>
-  {% endif %}
-
-  {% if proxima %}
   <section class="chart-card">
-    <p class="subtitle">Próxima acción</p>
-    <p class="total">
-      Mover a <strong>{{ proxima.wallet_name }}</strong> a las {{ proxima.timestamp.strftime("%H:%M") }}
-      {% if proxima.timestamp.date() != hoy %}({{ proxima.timestamp.strftime("%d/%m") }}){% endif %}
-      — en <strong>{{ proxima.horas }}h {{ proxima.minutos }}min</strong>
-    </p>
+    <dl class="lista-datos">
+      <div><dt>Rendimiento acumulado del rulo</dt><dd class="{{ 'positivo' if rendimiento_acumulado >= 0 else 'negativo' }}"><strong>{{ rendimiento_acumulado|pesos }}</strong></dd></div>
+      <div><dt>Extra por rotar vs. la mejor billetera quieta</dt><dd class="{{ 'positivo' if ventaja_rulo >= 0 else 'negativo' }}">{{ ventaja_rulo|pesos }}</dd></div>
+      <div><dt>Total aportado</dt><dd>{{ total_aportado|pesos }}</dd></div>
+      <div><dt>Patrimonio total (rulo + <a href="{{ url_for('main.patrimonio') }}">inversiones</a>)</dt><dd>{{ patrimonio_total|pesos }}</dd></div>
+    </dl>
   </section>
-  {% endif %}
 </div>
-{% endif %}
 
-{% if summary %}
-<table>
-  <thead>
-    <tr>
-      <th>Hora</th>
-      <th>Billetera</th>
-      <th>Monto capturado</th>
-      <th>TNA</th>
-      <th>Rendimiento</th>
-      <th>Estado</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for c in summary.captures %}
-    <tr class="{{ 'row-pendiente' if c.timestamp > ahora }}">
-      <td>{{ c.timestamp.strftime("%H:%M") }}</td>
-      <td>{{ c.wallet_name }}</td>
-      <td>${{ c.monto_capturado|ar }}</td>
-      <td>{{ c.tna|ar }}%</td>
-      <td>
-        ${{ c.rendimiento|ar }}
-        {% if c.dias_acumulados > 1 %}<span class="badge">acredita ×{{ c.dias_acumulados }} el próximo día hábil (incluye fin de semana)</span>{% endif %}
-        {% if c.limitado %}<span class="badge badge-warning">limitado por piso/techo</span>{% endif %}
-      </td>
-      <td>{% if c.timestamp > ahora %}<span class="badge">pendiente</span>{% else %}listo{% endif %}</td>
-    </tr>
-  {% else %}
-    <tr><td colspan="6">Ninguna billetera captura hoy.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-
-{% if summary.ingresos or summary.egresos %}
-<p class="total">
-  {% for m in summary.ingresos %}<span class="badge">+${{ m.monto|ar }} {{ m.etiqueta }}</span>{% endfor %}
-  {% for m in summary.egresos %}<span class="badge badge-warning">-${{ m.monto|ar }} {{ m.etiqueta }}</span>{% endfor %}
-</p>
-{% endif %}
-
-<p class="total">Rendimiento generado hoy: <strong>${{ summary.rendimiento_generado|ar }}</strong></p>
-<p class="total">Rendimiento acreditado hoy: <strong>${{ summary.rendimiento_acreditado|ar }}</strong></p>
-<p class="total">Capital de cierre: <strong>${{ summary.capital_cierre|ar }}</strong></p>
-{% else %}
-<p class="subtitle">Todavía no hay datos para hoy.</p>
-{% endif %}
-
-<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
-<script>
-  const styles = getComputedStyle(document.documentElement);
-  const token = (name) => styles.getPropertyValue(name).trim();
-  const ink = token('--text-secondary');
-  const categorical = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--series-${n}`));
-
-  new Chart(document.getElementById('ingresosEgresosChart'), {
-    type: 'pie',
-    data: {
-      labels: ['Ingresos', 'Egresos'],
-      datasets: [{
-        data: [{{ total_ingresos_mes }}, {{ total_egresos_mes }}],
-        backgroundColor: [token('--series-2'), token('--series-8')],
-      }],
-    },
-    options: {
-      plugins: { legend: { labels: { color: ink } } },
-    },
-  });
-
-  {% if egresos_por_categoria %}
-  const categoriasData = {{ egresos_por_categoria | tojson }};
-  new Chart(document.getElementById('categoriasChart'), {
-    type: 'pie',
-    data: {
-      labels: categoriasData.map((c) => c.categoria),
-      datasets: [{
-        data: categoriasData.map((c) => c.monto),
-        backgroundColor: categoriasData.map((_, i) => categorical[i % categorical.length]),
-      }],
-    },
-    options: {
-      plugins: { legend: { labels: { color: ink } } },
-    },
-  });
+<section class="chart-card" aria-labelledby="capturas">
+  <h2 id="capturas">Capturas de hoy</h2>
+  {% if summary %}
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Hora</th>
+          <th>Billetera</th>
+          <th class="num">Monto capturado</th>
+          <th class="num">TNA</th>
+          <th class="num">Rendimiento</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in summary.captures %}
+        <tr class="{{ 'row-pendiente' if c.timestamp > ahora }}">
+          <td>{{ c.timestamp.strftime("%H:%M") }}</td>
+          <td>{{ c.wallet_name }}</td>
+          <td class="num">{{ c.monto_capturado|pesos }}</td>
+          <td class="num">{{ c.tna|ar }}%</td>
+          <td class="num">
+            {{ c.rendimiento|pesos }}
+            {% if c.dias_acumulados > 1 %}<span class="badge">×{{ c.dias_acumulados }} el próximo día hábil</span>{% endif %}
+            {% if c.limitado %}<span class="badge badge-warning">limitado por piso/techo</span>{% endif %}
+          </td>
+          <td>{% if c.timestamp > ahora %}<span class="badge">pendiente</span>{% else %}listo{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6">Ninguna billetera captura hoy.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if summary.ingresos or summary.egresos %}
+    <p class="total">
+      {% for m in summary.ingresos %}<span class="badge">+{{ m.monto|pesos }} {{ m.etiqueta }}</span>{% endfor %}
+      {% for m in summary.egresos %}<span class="badge badge-warning">−{{ m.monto|pesos }} {{ m.etiqueta }}</span>{% endfor %}
+    </p>
   {% endif %}
-</script>
+  <p class="total">
+    Generado hoy <strong>{{ summary.rendimiento_generado|pesos }}</strong>
+    · acreditado hoy <strong>{{ summary.rendimiento_acreditado|pesos }}</strong>
+    · capital de cierre <strong>{{ summary.capital_cierre|pesos }}</strong>
+  </p>
+  {% else %}
+  <p class="subtitle">Todavía no hay datos para hoy.</p>
+  {% endif %}
+</section>
 {% endblock %}

@@ -15,8 +15,8 @@ from PIL import Image, ImageDraw, ImageFont
 AQUI = Path(__file__).resolve().parent
 STATIC = AQUI.parent.parent / "app" / "static"
 LADO = 1024
-AZUL_CLARO = (57, 135, 229)
-AZUL_OSCURO = (27, 79, 156)
+COLOR_ARRIBA = (22, 163, 74)   # verde
+COLOR_ABAJO = (15, 118, 110)   # verde azulado
 FUENTES = [
     "/usr/share/fonts/noto/NotoSans-Bold.ttf",
     "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
@@ -33,12 +33,12 @@ def _fuente(tamano):
 
 
 def dibujar() -> Image.Image:
-    # Fondo: cuadrado redondeado con degradé vertical azul.
+    # Fondo: cuadrado redondeado con degradé vertical verde.
     degradado = Image.new("RGB", (LADO, LADO))
     pixeles = degradado.load()
     for y in range(LADO):
         t = y / (LADO - 1)
-        color = tuple(round(a + (b - a) * t) for a, b in zip(AZUL_CLARO, AZUL_OSCURO))
+        color = tuple(round(a + (b - a) * t) for a, b in zip(COLOR_ARRIBA, COLOR_ABAJO))
         for x in range(LADO):
             pixeles[x, y] = color
     mascara = Image.new("L", (LADO, LADO), 0)

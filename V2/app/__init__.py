@@ -24,6 +24,7 @@ def create_app():
     app.register_blueprint(bp)
     _register_error_handlers(app)
     app.add_template_filter(formato_ar, "ar")
+    app.add_template_filter(formato_pesos, "pesos")
 
     @app.context_processor
     def _identidad_app():
@@ -37,6 +38,12 @@ def formato_ar(valor, decimales: int = 2) -> str:
     (ej. 3854969.5 -> "3.854.969,50")."""
     texto = f"{valor:,.{decimales}f}"
     return texto.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+
+
+def formato_pesos(valor, decimales: int = 2) -> str:
+    """Monto en pesos con el signo antes del $ (ej. -402.68 -> "−$402,68")."""
+    signo = "−" if valor < 0 else ""
+    return f"{signo}${formato_ar(abs(valor), decimales)}"
 
 
 def _load_or_create_secret_key() -> str:

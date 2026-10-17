@@ -78,9 +78,9 @@
           {% for m in flujo_mensual %}
             <tr>
               <td>{{ m.nombre }}{% if m.proyectado %} <span class="badge">proyectado</span>{% endif %}</td>
-              <td class="num">${{ m.ingresos|ar }}</td>
-              <td class="num">${{ m.egresos|ar }}</td>
-              <td class="num">${{ (m.ingresos - m.egresos)|ar }}</td>
+              <td class="num">{{ m.ingresos|pesos }}</td>
+              <td class="num">{{ m.egresos|pesos }}</td>
+              <td class="num">{{ (m.ingresos - m.egresos)|pesos }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -88,79 +88,6 @@
     </div>
   </details>
 </section>
-
-<div class="two-col">
-<section class="chart-card">
-  <h2>Aportes vs. ganancia</h2>
-  <p class="subtitle">Cuánto del capital de hoy es plata que pusiste vos vs. cuánto generó el rulo</p>
-  <canvas id="aportesChart" height="120" role="img" aria-label="Capital aportado vs. ganancia generada, acumulado día a día"></canvas>
-  <details>
-    <summary class="subtitle">Ver como tabla</summary>
-    <table>
-      <thead><tr><th>Fecha</th><th>Aportado</th><th>Ganancia</th><th>Total</th></tr></thead>
-      <tbody>
-        {% for point in capital_series %}
-          <tr>
-            <td>{{ point.date }}</td>
-            <td>${{ point.aportado|ar }}</td>
-            <td>${{ point.ganancia|ar }}</td>
-            <td>${{ point.capital_cierre|ar }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </details>
-</section>
-
-<section class="chart-card">
-  <h2>Evolución del capital (interés compuesto)</h2>
-  <canvas id="capitalChart" height="120" role="img" aria-label="Evolución del capital de cierre día a día"></canvas>
-  <details>
-    <summary class="subtitle">Ver como tabla</summary>
-    <table>
-      <thead><tr><th>Fecha</th><th>Capital de cierre</th></tr></thead>
-      <tbody>
-        {% for point in capital_series %}
-          <tr><td>{{ point.date }}</td><td>${{ point.capital_cierre|ar }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </details>
-</section>
-
-<section class="chart-card">
-  <h2>Rendimiento total por billetera</h2>
-  <canvas id="billeteraChart" height="120" role="img" aria-label="Rendimiento total generado por billetera en el período"></canvas>
-  <details>
-    <summary class="subtitle">Ver como tabla</summary>
-    <table>
-      <thead><tr><th>Billetera</th><th>Rendimiento total</th></tr></thead>
-      <tbody>
-        {% for item in rendimiento_por_billetera %}
-          <tr><td>{{ item.nombre }}</td><td>${{ item.rendimiento|ar }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </details>
-</section>
-
-<section class="chart-card">
-  <h2>Rulo vs. quieto</h2>
-  <p class="subtitle">Capital final si hubieras dejado cada aporte quieto en cada billetera (interés simple, sin rotar), con los mismos gastos e ingresos reales descontados, vs. el resultado real del rulo</p>
-  <canvas id="comparacionChart" height="120" role="img" aria-label="Comparación del capital final del rulo contra dejar el capital quieto en cada billetera"></canvas>
-  <details>
-    <summary class="subtitle">Ver como tabla</summary>
-    <table>
-      <thead><tr><th>Escenario</th><th>Capital final</th></tr></thead>
-      <tbody>
-        {% for item in comparacion %}
-          <tr><td>{{ item.nombre }}</td><td>${{ item.capital_final|ar }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </details>
-</section>
-</div>
 
 <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
 <script>
@@ -170,14 +97,6 @@
 
   const ink = token('--text-secondary');
   const grid = token('--gridline');
-  const seriesBlue = token('--series-1');
-  const neutral = token('--neutral-fill');
-  // Orden categórico fijo (mismo orden que las billeteras en el rulo).
-  const categorical = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--series-${n}`));
-
-  const capitalSeries = {{ capital_series | tojson }};
-  const rendimientoPorBilletera = {{ rendimiento_por_billetera | tojson }};
-  const comparacion = {{ comparacion | tojson }};
   const flujoMensual = {{ flujo_mensual | tojson }};
 
   // --- Entradas y salidas por mes ---
@@ -320,118 +239,5 @@
   document.getElementById('mesAnterior').addEventListener('click', () => seleccionarMes(mesSeleccionado - 1));
   document.getElementById('mesSiguiente').addEventListener('click', () => seleccionarMes(mesSeleccionado + 1));
   seleccionarMes(mesSeleccionado);
-
-  new Chart(document.getElementById('aportesChart'), {
-    type: 'line',
-    data: {
-      labels: capitalSeries.map(p => p.date),
-      datasets: [
-        {
-          label: 'Aportado',
-          data: capitalSeries.map(p => p.aportado),
-          borderColor: categorical[0],
-          backgroundColor: categorical[0],
-          fill: 'origin',
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.15,
-        },
-        {
-          label: 'Ganancia generada',
-          data: capitalSeries.map(p => p.aportado + p.ganancia),
-          borderColor: categorical[1],
-          backgroundColor: categorical[1],
-          fill: '-1',
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.15,
-        },
-      ],
-    },
-    options: {
-      scales: {
-        x: { ticks: { color: ink, maxTicksLimit: 10 }, grid: { color: grid } },
-        y: { ticks: { color: ink }, grid: { color: grid } },
-      },
-      plugins: {
-        legend: { labels: { color: ink } },
-        tooltip: { mode: 'index', intersect: false },
-      },
-      interaction: { mode: 'index', intersect: false },
-    },
-  });
-
-  new Chart(document.getElementById('capitalChart'), {
-    type: 'line',
-    data: {
-      labels: capitalSeries.map(p => p.date),
-      datasets: [{
-        label: 'Capital de cierre',
-        data: capitalSeries.map(p => p.capital_cierre),
-        borderColor: seriesBlue,
-        backgroundColor: seriesBlue,
-        borderWidth: 2,
-        pointRadius: 0,
-        tension: 0.15,
-      }],
-    },
-    options: {
-      scales: {
-        x: { ticks: { color: ink, maxTicksLimit: 10 }, grid: { color: grid } },
-        y: { ticks: { color: ink }, grid: { color: grid } },
-      },
-      plugins: {
-        legend: { display: false },
-        tooltip: { mode: 'index', intersect: false },
-      },
-      interaction: { mode: 'index', intersect: false },
-    },
-  });
-
-  new Chart(document.getElementById('billeteraChart'), {
-    type: 'bar',
-    data: {
-      labels: rendimientoPorBilletera.map(item => item.nombre),
-      datasets: [{
-        label: 'Rendimiento total',
-        data: rendimientoPorBilletera.map(item => item.rendimiento),
-        backgroundColor: rendimientoPorBilletera.map((_, i) => categorical[i % categorical.length]),
-        borderRadius: 4,
-      }],
-    },
-    options: {
-      scales: {
-        x: { ticks: { color: ink }, grid: { display: false } },
-        y: { ticks: { color: ink }, grid: { color: grid } },
-      },
-      plugins: {
-        legend: { display: false },
-        tooltip: { mode: 'nearest', intersect: true },
-      },
-    },
-  });
-
-  new Chart(document.getElementById('comparacionChart'), {
-    type: 'bar',
-    data: {
-      labels: comparacion.map(item => item.nombre),
-      datasets: [{
-        label: 'Capital final',
-        data: comparacion.map(item => item.capital_final),
-        backgroundColor: comparacion.map(item => item.nombre === 'Rulo (real)' ? seriesBlue : neutral),
-        borderRadius: 4,
-      }],
-    },
-    options: {
-      scales: {
-        x: { ticks: { color: ink }, grid: { display: false } },
-        y: { ticks: { color: ink }, grid: { color: grid }, beginAtZero: false },
-      },
-      plugins: {
-        legend: { display: false },
-        tooltip: { mode: 'nearest', intersect: true },
-      },
-    },
-  });
 </script>
 {% endblock %}
