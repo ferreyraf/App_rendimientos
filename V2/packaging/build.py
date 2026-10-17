@@ -24,6 +24,11 @@ BUILD = RAIZ / "build"
 DIST = RAIZ / "dist"
 RELEASE = DIST / "release"
 
+# La consola de Windows usa cp1252, que no tiene "→" ni "✔": sin esto el
+# script se cae en el primer print.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(RAIZ))
 from app.version import APP_ID, APP_NAME, DESCRIPTION, PUBLISHER, __version__  # noqa: E402
 

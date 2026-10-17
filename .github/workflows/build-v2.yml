@@ -16,6 +16,10 @@ defaults:
   run:
     working-directory: V2
 
+env:
+  # Python en Windows escribe la consola en cp1252 si no se le indica UTF-8.
+  PYTHONUTF8: "1"
+
 jobs:
   windows:
     runs-on: windows-latest
