@@ -3665,3 +3665,125 @@ a.calendario-celda:hover {
 .carrusel-pestanas[hidden] {
   display: none;
 }
+
+/* --- Rutina: registro diario --- */
+
+.registro-fila {
+  grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr);
+}
+
+.registro-card {
+  overflow-y: auto;
+  margin-bottom: 0;
+}
+
+.registro-card h2 .subtitle {
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+.registro-form {
+  gap: 12px;
+}
+
+.registro-grupo {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.registro-grupo legend {
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.selector-animo {
+  display: flex;
+  gap: 6px;
+}
+
+.selector-animo label {
+  cursor: pointer;
+}
+
+.selector-animo input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.selector-animo label > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--baseline);
+  border-radius: 12px;
+  font-size: 1.45rem;
+  filter: grayscale(0.85);
+  opacity: 0.7;
+  transition: transform 0.15s ease, filter 0.15s ease, opacity 0.15s ease, border-color 0.15s ease;
+}
+
+.selector-animo label:hover > span {
+  filter: none;
+  opacity: 1;
+}
+
+.selector-animo input:checked + span {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  filter: none;
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.selector-animo input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.campo-etiqueta {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.campo-etiqueta .campo-ayuda {
+  font-weight: 400;
+}
+
+.sin-cortes {
+  white-space: nowrap;
+}
+
+td.nota-corta {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.campo-peso input {
+  max-width: 10rem;
+}
+
+.registro-compacto .campos-dobles input {
+  max-width: 9rem;
+}
+
+.objetivos-form {
+  max-width: 24rem;
+}
+
+@media (max-width: 1100px) {
+  .registro-fila {
+    grid-template-columns: 1fr;
+  }
+}

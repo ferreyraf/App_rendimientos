@@ -12,17 +12,23 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from .. import db
-from ..routes import MESES, _entero, _fecha, ruta_interna
+from ..routes import MESES, _entero, _fecha, _hora, _numero, ruta_interna
 from . import datos
 from .logica import (
+    ANIMOS,
+    CALIDADES,
     DIAS_CORTOS,
     PRIORIDADES,
     clasificar_tareas,
     cumplimiento,
+    horas_de_sueno,
+    media_movil,
     mejor_racha,
     porcentaje,
     progreso_del_dia,
+    promedio,
     racha,
+    valor_hace,
 )
 
 bp = Blueprint("rutina", __name__, url_prefix="/rutina")
@@ -359,6 +365,150 @@ def eliminar_tarea(tarea_id):
     return redirect(url_for("rutina.tareas"))
 
 
+# --- Registro diario: sueño, ánimo y peso -------------------------------------
+
+PESO_MIN, PESO_MAX = 20, 400
+MAX_NOTA = 500
+
+
+def _parse_registro(form) -> dict:
+    """Solo los campos que vinieron en el formulario; vacío = borrar ese dato."""
+    campos = {}
+    if "acostarse" in form or "levantarse" in form:
+        acostarse = (form.get("acostarse") or "").strip()
+        levantarse = (form.get("levantarse") or "").strip()
+        if acostarse and levantarse:
+            acostarse = _hora(acostarse, "a qué hora te acostaste")
+            levantarse = _hora(levantarse, "a qué hora te levantaste")
+            horas = horas_de_sueno(acostarse, levantarse)
+            if not 1 <= horas <= 16:
+                raise ValueError(f"Revisá las horas de sueño: da {horas:.1f} h (tiene que estar entre 1 y 16).".replace(".", ",", 1))
+        elif acostarse or levantarse:
+            raise ValueError("Para el sueño completá a qué hora te acostaste y a qué hora te levantaste.")
+        campos["acostarse"] = acostarse or None
+        campos["levantarse"] = levantarse or None
+    for campo, nombre in (("sueno_calidad", "la calidad del sueño"), ("animo", "el ánimo")):
+        if campo in form:
+            valor = (form.get(campo) or "").strip()
+            if valor:
+                valor = _entero(valor, nombre)
+                if not 1 <= valor <= 5:
+                    raise ValueError(f"Revisá {nombre}: va de 1 a 5.")
+            campos[campo] = valor or None
+    if "peso" in form:
+        valor = (form.get("peso") or "").strip().replace(",", ".")
+        if valor:
+            valor = _numero(valor, "el peso")
+            if not PESO_MIN <= valor <= PESO_MAX:
+                raise ValueError(f"Revisá el peso: tiene que estar entre {PESO_MIN} y {PESO_MAX} kg.")
+            valor = round(valor, 1)
+        campos["peso"] = valor or None
+    if "nota" in form:
+        campos["nota"] = (form.get("nota") or "").strip()[:MAX_NOTA]
+    return campos
+
+
+def _fmt(valor: float | None, decimales: int = 1, sufijo: str = "") -> str:
+    if valor is None:
+        return "—"
+    return f"{valor:.{decimales}f}".replace(".", ",") + sufijo
+
+
+@bp.route("/registro")
+def registro():
+    conn = db.get_db()
+    usuario = db.usuario_actual()
+    hoy = date.today()
+    try:
+        fecha = min(date.fromisoformat(request.args.get("fecha", "")), hoy)
+    except ValueError:
+        fecha = hoy
+
+    objetivos = datos.get_objetivos(conn, usuario)
+    registros = datos.get_registros(conn, usuario, hoy - timedelta(days=89), hoy)
+    ultimos7 = [r for d, r in registros.items() if d > hoy - timedelta(days=7)]
+
+    # Series para los gráficos: 30 días de sueño y ánimo, 90 de peso.
+    dias30 = [hoy - timedelta(days=i) for i in range(29, -1, -1)]
+    dias90 = [hoy - timedelta(days=i) for i in range(89, -1, -1)]
+    pesos = {d: r.peso for d, r in registros.items() if r.peso is not None}
+    graficos = {
+        "dias30": [d.strftime("%d/%m") for d in dias30],
+        "sueno": [round(registros[d].horas_sueno, 2) if d in registros and registros[d].horas_sueno is not None else None for d in dias30],
+        "animo": [registros[d].animo if d in registros else None for d in dias30],
+        "dias90": [d.strftime("%d/%m") for d in dias90],
+        "peso": [pesos.get(d) for d in dias90],
+        "peso_media": [round(v, 2) if v is not None else None for v in media_movil(pesos, dias90)],
+        "sueno_meta": objetivos["sueno_horas"],
+        "peso_objetivo": objetivos["peso_objetivo"],
+        "animos": {k: v[0] for k, v in ANIMOS.items()},
+    }
+
+    sueno7 = promedio(r.horas_sueno for r in ultimos7)
+    animo7 = promedio(r.animo for r in ultimos7)
+    peso_actual = valor_hace(pesos, hoy, tolerancia=89)
+    peso_antes = valor_hace(pesos, hoy - timedelta(days=30))
+    return render_template(
+        "rutina/registro.html",
+        hoy=hoy,
+        fecha=fecha,
+        nombre_fecha=_fecha_corta(fecha, hoy) if abs((hoy - fecha).days) <= 1 else fecha.strftime("%d/%m/%Y"),
+        anterior=(fecha - timedelta(days=1)).isoformat(),
+        siguiente=(fecha + timedelta(days=1)).isoformat() if fecha < hoy else None,
+        actual=datos.get_registro(conn, usuario, fecha),
+        volver=request.full_path.rstrip("?"),
+        objetivos=objetivos,
+        sueno7=sueno7,
+        animo7=animo7,
+        emoji_animo7=ANIMOS[round(animo7)][0] if animo7 else "",
+        peso_actual=peso_actual,
+        variacion_peso=(peso_actual - peso_antes) if peso_actual is not None and peso_antes is not None else None,
+        registrados30=sum(1 for d in registros if d > hoy - timedelta(days=30)),
+        historial=sorted(registros.values(), key=lambda r: r.fecha, reverse=True),
+        graficos=graficos,
+        animos=ANIMOS,
+        calidades=CALIDADES,
+        fmt=_fmt,
+        fecha_corta=_fecha_corta,
+    )
+
+
+@bp.route("/registro", methods=["POST"])
+def guardar_registro():
+    hoy = date.today()
+    volver = ruta_interna(request.form.get("volver"), url_for("rutina.registro"))
+    try:
+        fecha = _fecha(request.form.get("fecha") or hoy.isoformat(), "la fecha")
+        if fecha > hoy:
+            raise ValueError("No se puede registrar un día que todavía no pasó.")
+        campos = _parse_registro(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(volver)
+    datos.guardar_registro(db.get_db(), db.usuario_actual(), fecha, campos)
+    flash(f"Registro {'de hoy' if fecha == hoy else 'del ' + fecha.strftime('%d/%m')} guardado.", "success")
+    return redirect(volver)
+
+
+@bp.route("/registro/objetivos", methods=["POST"])
+def guardar_objetivos():
+    volver = url_for("rutina.registro")
+    try:
+        sueno = _numero((request.form.get("sueno_horas") or "8").replace(",", "."), "las horas de sueño")
+        if not 4 <= sueno <= 12:
+            raise ValueError("La meta de sueño tiene que estar entre 4 y 12 horas.")
+        peso_raw = (request.form.get("peso_objetivo") or "").strip().replace(",", ".")
+        peso = _numero(peso_raw, "el peso objetivo") if peso_raw else None
+        if peso is not None and not PESO_MIN <= peso <= PESO_MAX:
+            raise ValueError(f"El peso objetivo tiene que estar entre {PESO_MIN} y {PESO_MAX} kg.")
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(volver)
+    datos.set_objetivos(db.get_db(), db.usuario_actual(), round(sueno, 2), round(peso, 1) if peso else None)
+    flash("Objetivos guardados.", "success")
+    return redirect(volver)
+
+
 # --- Aporte a la pantalla Hoy --------------------------------------------------
 
 def aporte_hoy(conn, ahora: datetime):
@@ -390,10 +540,32 @@ def aporte_hoy(conn, ahora: datetime):
             url=url_for("rutina.tareas"),
         ),
     ]
+    # Valor corto (ánimo y sueño); el peso va en la nota para no ocupar dos líneas.
+    registro_hoy = datos.get_registro(conn, usuario, hoy)
+    partes = []
+    if registro_hoy and registro_hoy.emoji:
+        partes.append(registro_hoy.emoji)
+    if registro_hoy and registro_hoy.horas_sueno is not None:
+        partes.append(_fmt(registro_hoy.horas_sueno, 1, " h"))
+    if registro_hoy is None:
+        nota = "Sueño, ánimo y peso"
+    elif registro_hoy.peso is not None:
+        nota = _fmt(registro_hoy.peso, 1, " kg")
+    else:
+        nota = "Registrado"
+    indicadores.append(Indicador(
+        "Cómo estás",
+        " ".join(partes) if partes else ("Registrado" if registro_hoy else "Sin cargar"),
+        nota,
+        url=url_for("rutina.registro"),
+    ))
+
     return AporteHoy(
         indicadores=indicadores,
         paneles_dia=[
             panel("Hábitos", "rutina/_checklist.html", items=items, fecha=hoy, volver=volver, en_hoy=True),
+            panel("Cómo estás", "rutina/_registro_form.html", actual=registro_hoy, fecha=hoy, volver=volver,
+                  compacto=True, animos=ANIMOS, calidades=CALIDADES),
             panel("Tareas", "rutina/_tareas_lista.html", tareas=de_hoy, hoy=hoy, volver=volver,
                   editable=False, vacio="No tenés tareas para hoy.", fecha_corta=_fecha_corta),
         ],

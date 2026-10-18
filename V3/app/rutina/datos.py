@@ -3,7 +3,7 @@
 
 from datetime import date, datetime
 
-from .logica import Habito, Tarea
+from .logica import Habito, Registro, Tarea
 
 SCHEMA = """
 -- Hábitos: algo que se hace ciertos días de la semana, con una meta diaria
@@ -39,6 +39,27 @@ CREATE TABLE IF NOT EXISTS tareas (
     prioridad INTEGER NOT NULL DEFAULT 1,
     hecha TEXT,
     creada TEXT NOT NULL
+);
+
+-- Cómo estuvo cada día: sueño de la noche anterior (horas "HH:MM"; las
+-- horas dormidas se calculan), calidad y ánimo de 1 a 5, peso en kg y una nota.
+CREATE TABLE IF NOT EXISTS registro_diario (
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    fecha TEXT NOT NULL,
+    acostarse TEXT,
+    levantarse TEXT,
+    sueno_calidad INTEGER,
+    animo INTEGER,
+    peso REAL,
+    nota TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (usuario_id, fecha)
+);
+
+-- Metas personales del registro (una fila por usuario).
+CREATE TABLE IF NOT EXISTS rutina_objetivos (
+    usuario_id INTEGER PRIMARY KEY REFERENCES usuarios(id),
+    sueno_horas REAL NOT NULL DEFAULT 8,
+    peso_objetivo REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_habitos_usuario ON habitos (usuario_id);
@@ -193,3 +214,70 @@ def delete_tarea(conn, usuario: int, tarea_id: int) -> bool:
 def get_tarea(conn, usuario: int, tarea_id: int) -> Tarea | None:
     row = conn.execute("SELECT * FROM tareas WHERE id = ? AND usuario_id = ?", (tarea_id, usuario)).fetchone()
     return _tarea(row) if row else None
+
+
+# --- Registro diario ---------------------------------------------------------
+
+# Columnas que se pueden escribir desde un formulario (los nombres de columna
+# del UPDATE salen de acá, nunca del pedido).
+CAMPOS_REGISTRO = ("acostarse", "levantarse", "sueno_calidad", "animo", "peso", "nota")
+
+
+def _registro(row) -> Registro:
+    return Registro(
+        fecha=date.fromisoformat(row["fecha"]),
+        acostarse=row["acostarse"],
+        levantarse=row["levantarse"],
+        sueno_calidad=row["sueno_calidad"],
+        animo=row["animo"],
+        peso=row["peso"],
+        nota=row["nota"],
+    )
+
+
+def get_registros(conn, usuario: int, desde: date, hasta: date) -> dict[date, Registro]:
+    rows = conn.execute(
+        "SELECT * FROM registro_diario WHERE usuario_id = ? AND fecha BETWEEN ? AND ? ORDER BY fecha",
+        (usuario, desde.isoformat(), hasta.isoformat()),
+    ).fetchall()
+    return {date.fromisoformat(r["fecha"]): _registro(r) for r in rows}
+
+
+def get_registro(conn, usuario: int, fecha: date) -> Registro | None:
+    return get_registros(conn, usuario, fecha, fecha).get(fecha)
+
+
+def guardar_registro(conn, usuario: int, fecha: date, campos: dict) -> None:
+    """Actualiza solo los campos recibidos (un formulario corto no borra lo
+    que no muestra). Si el día queda sin ningún dato, se borra la fila."""
+    campos = {k: v for k, v in campos.items() if k in CAMPOS_REGISTRO}
+    conn.execute(
+        "INSERT OR IGNORE INTO registro_diario (usuario_id, fecha) VALUES (?, ?)", (usuario, fecha.isoformat())
+    )
+    if campos:
+        asignaciones = ", ".join(f"{k} = ?" for k in campos)
+        conn.execute(
+            f"UPDATE registro_diario SET {asignaciones} WHERE usuario_id = ? AND fecha = ?",
+            (*campos.values(), usuario, fecha.isoformat()),
+        )
+    conn.execute(
+        "DELETE FROM registro_diario WHERE usuario_id = ? AND fecha = ? AND acostarse IS NULL "
+        "AND levantarse IS NULL AND sueno_calidad IS NULL AND animo IS NULL AND peso IS NULL AND nota = ''",
+        (usuario, fecha.isoformat()),
+    )
+    conn.commit()
+
+
+def get_objetivos(conn, usuario: int) -> dict:
+    row = conn.execute("SELECT sueno_horas, peso_objetivo FROM rutina_objetivos WHERE usuario_id = ?", (usuario,)).fetchone()
+    return {"sueno_horas": row["sueno_horas"], "peso_objetivo": row["peso_objetivo"]} if row else {
+        "sueno_horas": 8.0, "peso_objetivo": None}
+
+
+def set_objetivos(conn, usuario: int, sueno_horas: float, peso_objetivo: float | None) -> None:
+    conn.execute(
+        "INSERT INTO rutina_objetivos (usuario_id, sueno_horas, peso_objetivo) VALUES (?, ?, ?) "
+        "ON CONFLICT (usuario_id) DO UPDATE SET sueno_horas = excluded.sueno_horas, peso_objetivo = excluded.peso_objetivo",
+        (usuario, sueno_horas, peso_objetivo),
+    )
+    conn.commit()

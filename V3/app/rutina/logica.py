@@ -130,3 +130,62 @@ def clasificar_tareas(tareas: list[Tarea], hoy: date, dias_completadas: int = 30
         "sin_fecha": sorted((t for t in pendientes if t.fecha is None), key=lambda t: (-t.prioridad, t.creada)),
         "completadas": sorted((t for t in tareas if t.hecha and t.hecha >= limite), key=lambda t: t.hecha, reverse=True),
     }
+
+
+# --- Registro diario: sueño, ánimo y peso -------------------------------------
+
+ANIMOS = {1: ("😞", "Muy mal"), 2: ("😕", "Mal"), 3: ("😐", "Normal"), 4: ("🙂", "Bien"), 5: ("😄", "Muy bien")}
+CALIDADES = {1: "Pésimo", 2: "Malo", 3: "Regular", 4: "Bueno", 5: "Excelente"}
+
+
+def horas_de_sueno(acostarse: str, levantarse: str) -> float:
+    """Horas entre dos horas "HH:MM"; si levantarse es menor, cruzó la medianoche."""
+    a_h, a_m = (int(x) for x in acostarse.split(":"))
+    l_h, l_m = (int(x) for x in levantarse.split(":"))
+    minutos = ((l_h * 60 + l_m) - (a_h * 60 + a_m)) % (24 * 60)
+    return minutos / 60
+
+
+@dataclass(frozen=True)
+class Registro:
+    """Cómo estuvo un día. El sueño es el de la noche anterior (te acostaste
+    el día antes y te levantaste ese día)."""
+    fecha: date
+    acostarse: str | None = None
+    levantarse: str | None = None
+    sueno_calidad: int | None = None
+    animo: int | None = None
+    peso: float | None = None
+    nota: str = ""
+
+    @property
+    def horas_sueno(self) -> float | None:
+        if self.acostarse and self.levantarse:
+            return horas_de_sueno(self.acostarse, self.levantarse)
+        return None
+
+    @property
+    def emoji(self) -> str:
+        return ANIMOS[self.animo][0] if self.animo in ANIMOS else ""
+
+
+def promedio(valores) -> float | None:
+    valores = [v for v in valores if v is not None]
+    return sum(valores) / len(valores) if valores else None
+
+
+def media_movil(serie: dict[date, float], dias: list[date], ventana: int = 7) -> list[float | None]:
+    """Para cada día, el promedio de los valores cargados en los `ventana`
+    días que terminan ese día (None si no hay ninguno)."""
+    return [
+        promedio(serie.get(d - timedelta(days=i)) for i in range(ventana))
+        for d in dias
+    ]
+
+
+def valor_hace(serie: dict[date, float], fecha: date, tolerancia: int = 7) -> float | None:
+    """El último valor cargado en `fecha` o hasta `tolerancia` días antes."""
+    for i in range(tolerancia + 1):
+        if (fecha - timedelta(days=i)) in serie:
+            return serie[fecha - timedelta(days=i)]
+    return None

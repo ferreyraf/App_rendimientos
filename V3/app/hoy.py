@@ -89,16 +89,16 @@ def aporte_finanzas(conn, ahora: datetime) -> AporteHoy:
     semana = proximos_movimientos(egresos, ingresos, hoy + timedelta(days=1), hoy + timedelta(days=7))
 
     indicadores = [
-        Indicador("Capital en el rulo", formato_pesos(capital_hoy, 0),
-                  f"+{formato_pesos(summary.rendimiento_generado)} generado hoy" if summary else "",
+        Indicador("Capital del rulo", formato_pesos(capital_hoy, 0),
+                  f"+{formato_pesos(summary.rendimiento_generado, 0)} hoy" if summary else "",
                   url=url_for("main.dashboard")),
         Indicador(
-            "Próximo paso del rulo",
+            "Próximo movimiento",
             f"{proxima['wallet_name']} · {proxima['timestamp'].strftime('%H:%M')}" if proxima else "—",
             f"en {proxima['horas']}h {proxima['minutos']}min" if proxima else "Ninguna billetera activa",
         ),
         Indicador(
-            "Pagos y cobros de hoy",
+            "Pagos de hoy",
             f"{len(pendientes)} pendiente{'s' if len(pendientes) != 1 else ''}" if pendientes else "Al día",
             f"{len(pagos) - len(pendientes)} ya marcado{'s' if len(pagos) - len(pendientes) != 1 else ''}" if pagos else "Nada para hoy",
             clase="negativo" if any(f["vencido"] for f in pendientes) else "",

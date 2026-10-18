@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Registro diario</h1>
+    <p class="subtitle">Cómo dormiste, cómo te sentís y cuánto pesás. Con unos segundos por día se ven las tendencias.</p>
+  </div>
+  <nav class="mes-selector" aria-label="Cambiar de día">
+    <a class="boton-icono" href="{{ url_for('rutina.registro', fecha=anterior) }}" aria-label="Día anterior">‹</a>
+    <span class="mes-actual">{{ nombre_fecha }}</span>
+    {% if siguiente %}<a class="boton-icono" href="{{ url_for('rutina.registro', fecha=siguiente) }}" aria-label="Día siguiente">›</a>
+    {% else %}<span class="boton-icono deshabilitado" aria-hidden="true">›</span>{% endif %}
+  </nav>
+</header>
+
+<section class="kpi-row" aria-label="Últimos días">
+  <div class="stat-tile">
+    <p class="stat-label">Sueño · últimos 7 días</p>
+    <p class="stat-value">{{ fmt(sueno7, 1, " h") }}</p>
+    <p class="stat-note">
+      {% if sueno7 is none %}Sin datos todavía
+      {% elif sueno7 >= objetivos.sueno_horas %}Cumplís la meta de {{ fmt(objetivos.sueno_horas, 1, " h") }}
+      {% else %}{{ fmt(objetivos.sueno_horas - sueno7, 1, " h") }} menos que la meta{% endif %}
+    </p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Ánimo · últimos 7 días</p>
+    <p class="stat-value">{{ emoji_animo7 ~ ' ' if emoji_animo7 }}{{ fmt(animo7, 1) }}</p>
+    <p class="stat-note">promedio de 1 a 5</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Peso</p>
+    <p class="stat-value">{{ fmt(peso_actual, 1, " kg") }}</p>
+    <p class="stat-note">
+      {% if variacion_peso is not none %}{{ '+' if variacion_peso > 0 }}{{ fmt(variacion_peso, 1, " kg") }} en 30 días{% else %}Último cargado{% endif %}
+      {% if objetivos.peso_objetivo %} · objetivo {{ fmt(objetivos.peso_objetivo, 1, " kg") }}{% endif %}
+    </p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Días registrados</p>
+    <p class="stat-value">{{ registrados30 }}/30</p>
+    <p class="stat-note">en el último mes</p>
+  </div>
+</section>
+
+<div class="fila-llena llenar registro-fila">
+  <section class="chart-card columna-llena registro-card" aria-labelledby="registro-titulo">
+    <h2 id="registro-titulo">{{ "Hoy" if fecha == hoy else nombre_fecha }} <span class="subtitle">{{ fecha.strftime("%d/%m/%Y") }}</span></h2>
+    {% with compacto=false %}{% include "rutina/_registro_form.html" %}{% endwith %}
+  </section>
+
+  <section class="carrusel" data-carrusel="registro" aria-label="Tendencias">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="Sueño">
+        <p class="slide-meta">Horas dormidas cada noche, últimos 30 días. La línea es tu meta.</p>
+        <div class="grafico-caja"><canvas id="suenoChart" role="img" aria-label="Horas de sueño por noche en los últimos 30 días"></canvas></div>
+      </div>
+      <div class="carrusel-slide" data-titulo="Ánimo">
+        <p class="slide-meta">Cómo te sentiste cada día, últimos 30 días.</p>
+        <div class="grafico-caja"><canvas id="animoChart" role="img" aria-label="Ánimo diario de 1 a 5 en los últimos 30 días"></canvas></div>
+      </div>
+      <div class="carrusel-slide" data-titulo="Peso">
+        <p class="slide-meta">Últimos 90 días: cada punto es un día cargado; la línea, el promedio de 7 días (suaviza las subidas y bajadas diarias).</p>
+        <div class="grafico-caja"><canvas id="pesoChart" role="img" aria-label="Peso diario y promedio de 7 días en los últimos 90 días"></canvas></div>
+      </div>
+      <div class="carrusel-slide" data-titulo="Historial">
+        <div class="table-scroll tabla-llena">
+          <table>
+            <thead><tr><th>Día</th><th>Ánimo</th><th class="num">Sueño</th><th>Calidad</th><th class="num">Peso</th><th>Nota</th></tr></thead>
+            <tbody>
+              {% for r in historial %}
+                <tr>
+                  <td class="sin-cortes"><a href="{{ url_for('rutina.registro', fecha=r.fecha.isoformat()) }}">{{ fecha_corta(r.fecha, hoy) }}</a></td>
+                  <td class="sin-cortes">{% if r.animo %}{{ r.emoji }} {{ animos[r.animo][1] }}{% else %}—{% endif %}</td>
+                  <td class="num sin-cortes">{% if r.horas_sueno is not none %}{{ fmt(r.horas_sueno, 1, " h") }} <span class="muted">({{ r.acostarse }}–{{ r.levantarse }})</span>{% else %}—{% endif %}</td>
+                  <td>{{ calidades[r.sueno_calidad] if r.sueno_calidad else '—' }}</td>
+                  <td class="num">{{ fmt(r.peso, 1, " kg") if r.peso is not none else '—' }}</td>
+                  <td class="muted nota-corta" title="{{ r.nota }}">{{ r.nota }}</td>
+                </tr>
+              {% else %}
+                <tr><td colspan="6" class="vacio">Todavía no cargaste ningún día.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="carrusel-slide" data-titulo="Objetivos">
+        <form method="post" action="{{ url_for('rutina.guardar_objetivos') }}" class="panel-form objetivos-form">
+          <div class="campo">
+            <label for="obj-sueno">Horas de sueño por noche</label>
+            <input id="obj-sueno" type="number" name="sueno_horas" step="0.25" min="4" max="12" value="{{ objetivos.sueno_horas }}" required>
+          </div>
+          <div class="campo">
+            <label for="obj-peso">Peso objetivo en kg (opcional)</label>
+            <input id="obj-peso" type="number" name="peso_objetivo" step="0.1" min="20" max="400" value="{{ objetivos.peso_objetivo if objetivos.peso_objetivo else '' }}">
+            <span class="campo-ayuda">Aparece como referencia en el gráfico de peso.</span>
+          </div>
+          <div class="panel-acciones"><button type="submit">Guardar objetivos</button></div>
+        </form>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  (function () {
+    const g = {{ graficos | tojson }};
+    const css = getComputedStyle(document.documentElement);
+    const token = (n) => css.getPropertyValue(n).trim();
+    const serie = token('--series-1');
+    const tinta = token('--text-secondary');
+    const referencia = token('--text-muted');
+    const grilla = token('--gridline');
+    const num = (v, d = 1) => v.toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
+    const ejes = (y) => ({
+      x: { ticks: { color: tinta, maxTicksLimit: 10, autoSkip: true }, grid: { display: false } },
+      y: Object.assign({ ticks: { color: tinta }, grid: { color: grilla }, border: { display: false } }, y),
+    });
+    const linea = (valor, etiqueta, n) => ({
+      type: 'line', label: etiqueta, data: Array(n).fill(valor), borderColor: referencia,
+      borderWidth: 1, pointRadius: 0, pointHitRadius: 0, order: 0,
+    });
+    const leyenda = { labels: { color: tinta, boxWidth: 12, boxHeight: 2 } };
+
+    // Sueño: una sola serie (barras) y la meta como referencia neutra.
+    new Chart(document.getElementById('suenoChart'), {
+      type: 'bar',
+      data: {
+        labels: g.dias30,
+        datasets: [
+          { label: 'Horas dormidas', data: g.sueno, backgroundColor: serie, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 18, order: 1 },
+          linea(g.sueno_meta, `Meta (${num(g.sueno_meta)} h)`, g.dias30.length),
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        scales: ejes({ beginAtZero: true, suggestedMax: Math.max(10, g.sueno_meta + 1), ticks: { color: tinta, callback: (v) => v + ' h' } }),
+        plugins: { legend: leyenda, tooltip: { callbacks: { label: (c) => c.datasetIndex ? c.dataset.label : `${num(c.parsed.y)} h` } } },
+      },
+    });
+
+    // Ánimo: línea con un punto por día cargado; el eje muestra las caras.
+    new Chart(document.getElementById('animoChart'), {
+      type: 'line',
+      data: {
+        labels: g.dias30,
+        datasets: [{ label: 'Ánimo', data: g.animo, borderColor: serie, backgroundColor: serie, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointHitRadius: 12, spanGaps: true, tension: 0.25 }],
+      },
+      options: {
+        maintainAspectRatio: false,
+        scales: ejes({ min: 0.5, max: 5.5, afterBuildTicks: (eje) => { eje.ticks = [1, 2, 3, 4, 5].map((v) => ({ value: v })); }, ticks: { color: tinta, font: { size: 15 }, callback: (v) => g.animos[v] || '' } }),
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${g.animos[c.parsed.y]} ${c.parsed.y} de 5` } } },
+        interaction: { mode: 'nearest', intersect: false },
+      },
+    });
+
+    // Peso: días cargados como puntos y el promedio de 7 días como línea.
+    const datasetsPeso = [
+      { type: 'line', label: 'Promedio 7 días', data: g.peso_media, borderColor: serie, borderWidth: 2, pointRadius: 0, spanGaps: true, tension: 0.3, order: 1 },
+      { type: 'line', label: 'Peso del día', data: g.peso, borderColor: 'transparent', backgroundColor: serie + '88', pointRadius: 4, pointHoverRadius: 6, pointHitRadius: 12, showLine: false, order: 2 },
+    ];
+    if (g.peso_objetivo) datasetsPeso.push(linea(g.peso_objetivo, `Objetivo (${num(g.peso_objetivo)} kg)`, g.dias90.length));
+    new Chart(document.getElementById('pesoChart'), {
+      data: { labels: g.dias90, datasets: datasetsPeso },
+      options: {
+        maintainAspectRatio: false,
+        scales: ejes({ grace: '5%', ticks: { color: tinta, callback: (v) => num(v) + ' kg' } }),
+        plugins: { legend: leyenda, tooltip: { mode: 'index', intersect: false, filter: (c) => c.parsed.y !== null && c.dataset.label.indexOf('Objetivo') === -1, callbacks: { label: (c) => `${c.dataset.label}: ${num(c.parsed.y)} kg` } } },
+        interaction: { mode: 'index', intersect: false },
+      },
+    });
+  })();
+</script>
+{% endblock %}

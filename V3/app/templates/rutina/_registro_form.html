@@ -1,0 +1,61 @@
+{# Cómo estuvo un día. Usa: actual (Registro o None), fecha, volver, animos,
+   calidades y compacto (en Hoy: sin calidad del sueño ni nota). Los campos
+   que no se muestran no se tocan al guardar. #}
+{% set pre = "hoy-" if compacto else "" %}
+<form method="post" action="{{ url_for('rutina.guardar_registro') }}" class="panel-form registro-form {{ 'registro-compacto' if compacto }}" {{ 'data-rapido' if compacto }}>
+  <input type="hidden" name="fecha" value="{{ fecha.isoformat() }}">
+  <input type="hidden" name="volver" value="{{ volver }}">
+
+  <fieldset class="registro-grupo">
+    <legend>Ánimo</legend>
+    <div class="selector-animo">
+      {% for valor, (emoji, nombre) in animos.items() %}
+        <label title="{{ nombre }}">
+          <input type="radio" name="animo" value="{{ valor }}" {{ 'checked' if actual and actual.animo == valor }}>
+          <span><span class="emoji" aria-hidden="true">{{ emoji }}</span><span class="visualmente-oculto">{{ nombre }}</span></span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset class="registro-grupo">
+    <legend>Sueño de anoche</legend>
+    <div class="campos-dobles">
+      <div class="campo">
+        <label for="{{ pre }}acostarse">Me acosté</label>
+        <input id="{{ pre }}acostarse" type="time" name="acostarse" value="{{ actual.acostarse if actual and actual.acostarse else '' }}">
+      </div>
+      <div class="campo">
+        <label for="{{ pre }}levantarse">Me levanté</label>
+        <input id="{{ pre }}levantarse" type="time" name="levantarse" value="{{ actual.levantarse if actual and actual.levantarse else '' }}">
+      </div>
+    </div>
+    {% if not compacto %}
+      <div class="campo">
+        <span class="campo-etiqueta" id="calidad-etiqueta">Calidad <span class="campo-ayuda">(1 pésimo · 5 excelente)</span></span>
+        <div class="selector-dias" role="radiogroup" aria-labelledby="calidad-etiqueta">
+          {% for valor, nombre in calidades.items() %}
+            <label title="{{ nombre }}"><input type="radio" name="sueno_calidad" value="{{ valor }}" {{ 'checked' if actual and actual.sueno_calidad == valor }}><span>{{ valor }}</span></label>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </fieldset>
+
+  <div class="campo campo-peso">
+    <label for="{{ pre }}peso">Peso (kg)</label>
+    <input id="{{ pre }}peso" type="number" name="peso" step="0.1" min="20" max="400" inputmode="decimal" value="{{ actual.peso if actual and actual.peso is not none else '' }}" placeholder="Opcional">
+  </div>
+
+  {% if not compacto %}
+    <div class="campo">
+      <label for="nota">Nota del día (opcional)</label>
+      <textarea id="nota" name="nota" rows="2" maxlength="500" placeholder="Algo para recordar de hoy">{{ actual.nota if actual else '' }}</textarea>
+    </div>
+  {% endif %}
+
+  <div class="panel-acciones">
+    <button type="submit" class="btn-primary">Guardar</button>
+    {% if compacto %}<a href="{{ url_for('rutina.registro') }}">Ver registro completo</a>{% endif %}
+  </div>
+</form>
