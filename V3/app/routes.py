@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, send_file, url_for
 
 from . import cotizacion, db, formato_ar, formato_pesos, preferencias, respaldo
-from .version import APP_NAME, DESCRIPTION, PUBLISHER, REPO_GITHUB, __version__
+from .version import APP_ID, APP_NAME, DESCRIPTION, PUBLISHER, REPO_GITHUB, __version__
 from .domain import (
     MovimientoRecurrente,
     Wallet,
@@ -840,7 +840,7 @@ def api_version():
         try:
             pedido = urllib.request.Request(
                 f"https://api.github.com/repos/{REPO_GITHUB}/releases?per_page=20",
-                headers={"User-Agent": "RuloFinanciero/1.0", "Accept": "application/vnd.github+json"},
+                headers={"User-Agent": f"{APP_ID}/{__version__}", "Accept": "application/vnd.github+json"},
             )
             with urllib.request.urlopen(pedido, timeout=8) as resp:
                 releases = json.load(resp)
@@ -867,7 +867,7 @@ def api_ipc():
     if _ipc_cache["meses"] is None or ahora - _ipc_cache["timestamp"] > IPC_CACHE_SEGUNDOS:
         try:
             # Sin User-Agent propio la API responde 403 al de urllib.
-            pedido = urllib.request.Request(IPC_URL, headers={"User-Agent": "RuloFinanciero/1.0"})
+            pedido = urllib.request.Request(IPC_URL, headers={"User-Agent": f"{APP_ID}/{__version__}"})
             with urllib.request.urlopen(pedido, timeout=8) as resp:
                 datos = json.load(resp)
             _ipc_cache["meses"] = [
@@ -1046,7 +1046,7 @@ def probar_aviso():
 @bp.route("/respaldo/descargar")
 def descargar_respaldo():
     """Copia completa de la base, para guardar o llevar a otra PC."""
-    destino = Path(tempfile.mkdtemp()) / f"RuloFinanciero-respaldo-{date.today().isoformat()}.db"
+    destino = Path(tempfile.mkdtemp()) / f"{APP_ID}-respaldo-{date.today().isoformat()}.db"
     respaldo.exportar(destino)
     return send_file(destino, as_attachment=True, download_name=destino.name, mimetype="application/octet-stream")
 
@@ -1102,7 +1102,7 @@ def exportar_movimientos():
     return Response(
         "\ufeff" + salida.getvalue(),
         mimetype="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f"attachment; filename=RuloFinanciero-movimientos-{hoy.isoformat()}.csv"},
+        headers={"Content-Disposition": f"attachment; filename={APP_ID}-movimientos-{hoy.isoformat()}.csv"},
     )
 
 

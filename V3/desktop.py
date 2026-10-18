@@ -25,7 +25,7 @@ import webview  # noqa: E402
 
 from app import create_app, db, preferencias  # noqa: E402
 from app.recordatorios import Recordatorios, notificar  # noqa: E402
-from app.version import APP_NAME, __version__  # noqa: E402
+from app.version import APP_ID, APP_NAME, __version__  # noqa: E402
 
 HOST = "127.0.0.1"
 # Puerto fijo para detectar si la app ya está abierta y pedirle que se muestre.
@@ -165,7 +165,7 @@ class Bandeja:
             pystray.MenuItem(f"Abrir {APP_NAME}", lambda: self._abrir(), default=True),
             pystray.MenuItem("Salir", lambda: self._salir()),
         )
-        self._icono = pystray.Icon("RuloFinanciero", Image.open(ICONO), APP_NAME, menu)
+        self._icono = pystray.Icon(APP_ID, Image.open(ICONO), APP_NAME, menu)
         self._icono.run_detached()
         self.disponible = True
 

@@ -2,7 +2,7 @@
 
 La sincronización usa una carpeta compartida (ej. Google Drive para
 escritorio): cada cambio publica una copia de la base en
-`<carpeta>/RuloFinanciero-sync.db`, y al abrir la app en otra PC, si esa copia
+`<carpeta>/Bitacora-sync.db`, y al abrir la app en otra PC, si esa copia
 cambió, se trae. Siempre se hace un backup local antes de reemplazar datos.
 """
 
@@ -16,10 +16,13 @@ from datetime import datetime
 from pathlib import Path
 
 from . import db, preferencias
+from .version import APP_ID, APP_NAME
 
 logger = logging.getLogger(__name__)
 
-ARCHIVO_SYNC = "RuloFinanciero-sync.db"
+# Propio de cada app (la V2 usa "RuloFinanciero-sync.db"): si las dos
+# sincronizan en la misma carpeta, no se pisan.
+ARCHIVO_SYNC = f"{APP_ID}-sync.db"
 TABLAS_REQUERIDAS = {"aportes", "egresos", "ingresos", "wallets"}
 REVISAR_CADA_SEGUNDOS = 120
 _ultima_revision = 0.0
@@ -34,7 +37,7 @@ def _hash(ruta: Path) -> str:
 
 
 def validar(ruta: Path) -> None:
-    """Lanza RespaldoInvalido si el archivo no es una base de Rulo Financiero."""
+    """Lanza RespaldoInvalido si el archivo no es una base de la app (o de la V2)."""
     try:
         conn = sqlite3.connect(f"file:{ruta}?mode=ro", uri=True)
         try:
@@ -42,9 +45,9 @@ def validar(ruta: Path) -> None:
         finally:
             conn.close()
     except sqlite3.DatabaseError as exc:
-        raise RespaldoInvalido("El archivo no es un respaldo válido de Rulo Financiero.") from exc
+        raise RespaldoInvalido(f"El archivo no es un respaldo válido de {APP_NAME}.") from exc
     if not TABLAS_REQUERIDAS <= tablas:
-        raise RespaldoInvalido("El archivo no es un respaldo de Rulo Financiero (le faltan datos).")
+        raise RespaldoInvalido(f"El archivo no es un respaldo de {APP_NAME} (le faltan datos).")
 
 
 def exportar(destino: Path) -> Path:
@@ -160,7 +163,7 @@ def traer_si_cambio(forzar: bool = False) -> str | None:
     mensaje = "Se trajeron los cambios hechos en tu otra PC."
     if prefs["sync_pendiente"]:
         marca = datetime.now().strftime("%Y%m%d_%H%M%S")
-        conflicto = carpeta / f"RuloFinanciero-conflicto-{platform.node()}-{marca}.db"
+        conflicto = carpeta / f"{APP_ID}-conflicto-{platform.node()}-{marca}.db"
         exportar(conflicto)
         mensaje = (
             "Las dos PCs tenían cambios sin sincronizar: se trajeron los de la otra PC y los de esta "

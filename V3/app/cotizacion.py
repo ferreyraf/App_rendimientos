@@ -47,7 +47,7 @@ def parsear_blue_cordoba(pagina: str) -> tuple[float, datetime]:
 
 
 def consultar_infodolar() -> tuple[float, datetime]:
-    pedido = urllib.request.Request(INFODOLAR_URL, headers={"User-Agent": "Mozilla/5.0 RuloFinanciero/1.0"})
+    pedido = urllib.request.Request(INFODOLAR_URL, headers={"User-Agent": "Mozilla/5.0 Bitacora/3.0"})
     with urllib.request.urlopen(pedido, timeout=8) as resp:
         return parsear_blue_cordoba(resp.read().decode("utf-8", errors="replace"))
 
