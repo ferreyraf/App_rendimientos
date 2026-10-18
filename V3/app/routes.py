@@ -21,6 +21,7 @@ from .domain import (
     MovimientoRecurrente,
     Wallet,
     aguinaldos,
+    aguinaldos_por_clave,
     ajustes_por_controles,
     alertas_financieras,
     fechas_del_movimiento,
@@ -245,6 +246,7 @@ def _datos_movimiento(tipo: str, id_: int, m) -> dict:
         "aumento_inicio": m.aumento_inicio.isoformat() if m.aumento_inicio else "",
         "hasta": m.hasta.isoformat() if m.hasta else "",
         "aguinaldo": str(m.aguinaldo),
+        "aguinaldo_negro_pct": m.aguinaldo_negro_pct or "",
         "ajustes": [
             {"mes": f"{MESES[f.month - 1][:3]} {f.year}", "pct": pct} for f, pct in m.ajustes
         ],
@@ -397,12 +399,13 @@ def _parse_moneda(form, conn) -> str:
     return moneda
 
 
-def _parse_extras(form) -> tuple[date | None, int]:
-    """`hasta` (fin de un recurrente, ej. la última cuota) y el modo de
+def _parse_extras(form) -> tuple[date | None, int, float]:
+    """`hasta` (fin de un recurrente, ej. la última cuota), el modo de
     aguinaldo automático (0 = no, 1 = 30/06 y 18/12, 2 = con el sueldo de
-    julio y enero). Solo aplican a recurrentes."""
+    julio y enero) y el % de ese aguinaldo que se cobra en negro. Solo
+    aplican a recurrentes."""
     if form.get("recurrente") != "on":
-        return None, 0
+        return None, 0, 0.0
     hasta_raw = (form.get("hasta") or "").strip()
     hasta = _fecha(hasta_raw, "la fecha \"hasta\"") if hasta_raw else None
     desde_raw = (form.get("desde") or "").strip()
@@ -411,7 +414,11 @@ def _parse_extras(form) -> tuple[date | None, int]:
     aguinaldo = _entero(form.get("aguinaldo") or 0, "la opción de aguinaldo")
     if aguinaldo not in (0, 1, 2):
         raise ValueError("Opción de aguinaldo inválida.")
-    return hasta, aguinaldo
+    negro_raw = (form.get("aguinaldo_negro_pct") or "").strip()
+    negro = _numero(negro_raw, "el % de aguinaldo en negro") if negro_raw and aguinaldo else 0.0
+    if not 0 <= negro <= 100:
+        raise ValueError("El % de aguinaldo en negro tiene que estar entre 0 y 100.")
+    return hasta, aguinaldo, negro
 
 
 def _parse_movimiento_form(
@@ -692,7 +699,7 @@ def agregar_egreso():
             aumento_pct, aumento_inicio, aumento_periodo_meses,
         ) = _parse_movimiento_form(request.form)
         moneda = _parse_moneda(request.form, conn)
-        hasta, aguinaldo = _parse_extras(request.form)
+        hasta, aguinaldo, aguinaldo_negro_pct = _parse_extras(request.form)
     except KeyError:
         flash("Datos inválidos: revisá los campos del egreso.", "error")
         return redirect(url_for("main.configuracion", _anchor="gastos"))
@@ -718,7 +725,7 @@ def editar_egreso(egreso_id):
             aumento_pct, aumento_inicio, aumento_periodo_meses,
         ) = _parse_movimiento_form(request.form)
         moneda = _parse_moneda(request.form, conn)
-        hasta, aguinaldo = _parse_extras(request.form)
+        hasta, aguinaldo, aguinaldo_negro_pct = _parse_extras(request.form)
     except KeyError:
         flash("Datos inválidos: revisá los campos del egreso.", "error")
         return redirect(url_for("main.configuracion", _anchor="gastos"))
@@ -896,7 +903,7 @@ def agregar_ingreso():
             aumento_pct, aumento_inicio, aumento_periodo_meses,
         ) = _parse_movimiento_form(request.form)
         moneda = _parse_moneda(request.form, conn)
-        hasta, aguinaldo = _parse_extras(request.form)
+        hasta, aguinaldo, aguinaldo_negro_pct = _parse_extras(request.form)
     except KeyError:
         flash("Datos inválidos: revisá los campos del ingreso.", "error")
         return redirect(url_for("main.configuracion", _anchor="ingresos"))
@@ -908,7 +915,7 @@ def agregar_ingreso():
         conn, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil,
         aumento_pct, aumento_inicio, aumento_periodo_meses, moneda,
     )
-    db.guardar_extras(conn, "ingresos", nuevo_id, hasta, aguinaldo)
+    db.guardar_extras(conn, "ingresos", nuevo_id, hasta, aguinaldo, aguinaldo_negro_pct)
     flash("Ingreso agregado.", "success")
     return redirect(url_for("main.configuracion", _anchor="ingresos"))
 
@@ -922,7 +929,7 @@ def editar_ingreso(ingreso_id):
             aumento_pct, aumento_inicio, aumento_periodo_meses,
         ) = _parse_movimiento_form(request.form)
         moneda = _parse_moneda(request.form, conn)
-        hasta, aguinaldo = _parse_extras(request.form)
+        hasta, aguinaldo, aguinaldo_negro_pct = _parse_extras(request.form)
     except KeyError:
         flash("Datos inválidos: revisá los campos del ingreso.", "error")
         return redirect(url_for("main.configuracion", _anchor="ingresos"))
@@ -936,7 +943,7 @@ def editar_ingreso(ingreso_id):
     ):
         flash("Ese ingreso ya no existe.", "error")
         return redirect(url_for("main.configuracion", _anchor="ingresos"))
-    db.guardar_extras(conn, "ingresos", ingreso_id, hasta, aguinaldo)
+    db.guardar_extras(conn, "ingresos", ingreso_id, hasta, aguinaldo, aguinaldo_negro_pct)
     flash("Ingreso actualizado.", "success")
     return redirect(url_for("main.configuracion", _anchor="ingresos"))
 
@@ -959,7 +966,7 @@ def _ocurrencias_mes(conn, anio: int, mes: int, hoy: date) -> list[dict]:
         for id_, m in items:
             derivados = [("", m)]
             if tipo == "ingreso":
-                derivados += [("aguinaldo", a) for a in aguinaldos([m], primero, ultimo)]
+                derivados += aguinaldos_por_clave([m], primero, ultimo)
             for clave, item in derivados:
                 for fecha in fechas_del_movimiento(item, primero, ultimo):
                     real = pago_registrado(item, fecha)
@@ -1198,7 +1205,7 @@ def registrar_pago():
     except (KeyError, ValueError):
         flash("Datos inválidos: revisá el monto.", "error")
         return redirect(volver)
-    if tabla is None or clave not in ("", "aguinaldo") or monto < 0:
+    if tabla is None or clave not in ("", "aguinaldo", "aguinaldo_negro") or monto < 0:
         flash("Datos inválidos.", "error")
         return redirect(volver)
     db.guardar_pago(db.get_db(), tabla, movimiento_id, fecha, clave, monto)

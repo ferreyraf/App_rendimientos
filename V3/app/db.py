@@ -346,6 +346,8 @@ def _migrate_cuotas_y_aguinaldo(conn):
             conn.execute(f"ALTER TABLE {tabla} ADD COLUMN hasta TEXT")
         if "aguinaldo" not in columnas:
             conn.execute(f"ALTER TABLE {tabla} ADD COLUMN aguinaldo INTEGER NOT NULL DEFAULT 0")
+        if "aguinaldo_negro_pct" not in columnas:
+            conn.execute(f"ALTER TABLE {tabla} ADD COLUMN aguinaldo_negro_pct REAL NOT NULL DEFAULT 0")
 
 
 def _migrate_legacy_egresos(conn):
@@ -484,8 +486,10 @@ def _row_to_movimiento(row, ajustes=(), cotizaciones=None, pagos=None) -> Movimi
         cotizacion=(cotizaciones or {}).get(row["moneda"] if "moneda" in columnas else "ARS", 1.0),
         hasta=date.fromisoformat(row["hasta"]) if "hasta" in columnas and row["hasta"] else None,
         aguinaldo=row["aguinaldo"] if "aguinaldo" in columnas else 0,
+        aguinaldo_negro_pct=row["aguinaldo_negro_pct"] if "aguinaldo_negro_pct" in columnas else 0.0,
         pagos=tuple(pagos.get("", ())),
         pagos_aguinaldo=tuple(pagos.get("aguinaldo", ())),
+        pagos_aguinaldo_negro=tuple(pagos.get("aguinaldo_negro", ())),
     )
 
 
@@ -605,12 +609,13 @@ def _delete_movimiento(conn, tabla, movimiento_id):
     conn.commit()
 
 
-def guardar_extras(conn, tabla, movimiento_id, hasta, aguinaldo):
+def guardar_extras(conn, tabla, movimiento_id, hasta, aguinaldo, aguinaldo_negro_pct=0.0):
     """Campos que se guardan aparte del alta/edición: fin del recurrente
-    (`hasta`) y el modo de aguinaldo automático (solo ingresos)."""
+    (`hasta`), el modo de aguinaldo automático y qué % de él se cobra en
+    negro (solo ingresos)."""
     conn.execute(
-        f"UPDATE {tabla} SET hasta = ?, aguinaldo = ? WHERE id = ?",
-        (hasta.isoformat() if hasta else None, int(aguinaldo), movimiento_id),
+        f"UPDATE {tabla} SET hasta = ?, aguinaldo = ?, aguinaldo_negro_pct = ? WHERE id = ?",
+        (hasta.isoformat() if hasta else None, int(aguinaldo), float(aguinaldo_negro_pct), movimiento_id),
     )
     conn.commit()
 

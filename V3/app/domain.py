@@ -110,6 +110,9 @@ class MovimientoRecurrente:
     `aguinaldo` (ingresos recurrentes, ej. sueldo) genera medio aguinaldo por
     semestre: 50% del mayor monto cobrado en el semestre. 0 = no; 1 = se
     cobra el 30/06 y el 18/12; 2 = se cobra con el sueldo de julio y enero.
+    `aguinaldo_negro_pct` (0-100) parte ese aguinaldo en dos: esa porción
+    como "Aguinaldo negro" y el resto como "Aguinaldo blanco", cada uno con
+    sus propios cobros reales (`pagos_aguinaldo` / `pagos_aguinaldo_negro`).
     """
 
     etiqueta: str
@@ -127,8 +130,10 @@ class MovimientoRecurrente:
     cotizacion: float = 1.0
     hasta: date | None = None
     aguinaldo: int = 0
+    aguinaldo_negro_pct: float = 0.0
     pagos: tuple[tuple[date, float], ...] = ()
     pagos_aguinaldo: tuple[tuple[date, float], ...] = ()
+    pagos_aguinaldo_negro: tuple[tuple[date, float], ...] = ()
 
     @property
     def monto_en_pesos(self) -> float:
@@ -286,14 +291,19 @@ def _fecha_aguinaldo(item: MovimientoRecurrente, anio: int, semestre: int) -> da
     return fechas[0] if fechas else None
 
 
-def aguinaldos(ingresos: list[MovimientoRecurrente], desde: date, hasta: date) -> list[MovimientoRecurrente]:
+def aguinaldos_por_clave(
+    ingresos: list[MovimientoRecurrente], desde: date, hasta: date,
+) -> list[tuple[str, MovimientoRecurrente]]:
     """Medio aguinaldo de cada ingreso recurrente con `aguinaldo` activo que
     se cobra entre `desde` y `hasta`, como ingresos puntuales: el 50% del
-    mayor monto que pagó ese ingreso en el semestre."""
+    mayor monto que pagó ese ingreso en el semestre. Cada uno va con su clave
+    de pagos ('aguinaldo', o 'aguinaldo_negro' para la parte en negro si
+    `aguinaldo_negro_pct` lo divide)."""
     resultado = []
     for item in ingresos:
         if not item.recurrente or not item.aguinaldo:
             continue
+        negro = min(max(item.aguinaldo_negro_pct, 0.0), 100.0) / 100
         for anio in range(desde.year - 1, hasta.year + 1):
             for semestre, (mes_ini, mes_fin) in ((1, (1, 6)), (2, (7, 12))):
                 cobro = _fecha_aguinaldo(item, anio, semestre)
@@ -304,15 +314,31 @@ def aguinaldos(ingresos: list[MovimientoRecurrente], desde: date, hasta: date) -
                 montos = [monto_ocurrencia(item, f) for f in fechas_del_movimiento(item, inicio, fin)]
                 if not montos:
                     continue
-                resultado.append(MovimientoRecurrente(
-                    etiqueta=f"Aguinaldo ({item.etiqueta})",
-                    monto=max(montos) / 2,
-                    recurrente=False,
-                    fecha=cobro,
-                    categoria=item.categoria,
-                    pagos=item.pagos_aguinaldo,
-                ))
+                total = max(montos) / 2
+                if negro:
+                    partes = [
+                        ("aguinaldo", f"Aguinaldo blanco ({item.etiqueta})", total * (1 - negro), item.pagos_aguinaldo),
+                        ("aguinaldo_negro", f"Aguinaldo negro ({item.etiqueta})", total * negro, item.pagos_aguinaldo_negro),
+                    ]
+                else:
+                    partes = [("aguinaldo", f"Aguinaldo ({item.etiqueta})", total, item.pagos_aguinaldo)]
+                for clave, etiqueta, monto, pagos in partes:
+                    if monto <= 0:
+                        continue
+                    resultado.append((clave, MovimientoRecurrente(
+                        etiqueta=etiqueta,
+                        monto=monto,
+                        recurrente=False,
+                        fecha=cobro,
+                        categoria=item.categoria,
+                        pagos=pagos,
+                    )))
     return resultado
+
+
+def aguinaldos(ingresos: list[MovimientoRecurrente], desde: date, hasta: date) -> list[MovimientoRecurrente]:
+    """Como `aguinaldos_por_clave`, sin las claves."""
+    return [m for _, m in aguinaldos_por_clave(ingresos, desde, hasta)]
 
 
 def _monto_con_aumento(item: MovimientoRecurrente, fecha: date) -> float:

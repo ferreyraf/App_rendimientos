@@ -11,7 +11,7 @@
 {% macro resumen_aumento(m) -%}
   {%- if not m.recurrente -%}
   {%- elif m.aguinaldo -%}
-    Con aguinaldo
+    Con aguinaldo{% if m.aguinaldo_negro_pct %} ({{ m.aguinaldo_negro_pct|ar(0) if m.aguinaldo_negro_pct == m.aguinaldo_negro_pct|int else m.aguinaldo_negro_pct|ar }}% negro){% endif %}
   {%- elif m.ajustes -%}
     {{ m.ajustes|length }} ajuste{{ 's' if m.ajustes|length != 1 }} cargado{{ 's' if m.ajustes|length != 1 }}
   {%- elif m.aumento_pct and m.aumento_inicio -%}
@@ -149,6 +149,11 @@
                 <option value="2">Sí, con el sueldo de julio y enero</option>
               </select>
               <span class="campo-ayuda">50% del mayor sueldo del semestre.</span>
+            </div>
+            <div class="campo" data-solo-recurrente hidden>
+              <label for="ingreso-aguinaldo-negro">% del aguinaldo en negro</label>
+              <input id="ingreso-aguinaldo-negro" type="number" name="aguinaldo_negro_pct" step="0.01" min="0" max="100" placeholder="0">
+              <span class="campo-ayuda">Lo divide en aguinaldo blanco y negro. Vacío o 0 = uno solo.</span>
             </div>
           {% endif %}
         </div>
