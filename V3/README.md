@@ -59,9 +59,43 @@ Cuando suena aparece un aviso con **Detener** / **Posponer** en cualquier pantal
 ## Desarrollo
 
 ```sh
-./start.sh       # versión web en http://localhost:5003
+./start.sh       # versión web en https://localhost:5003 (http sin certificado)
 ./desktop.sh     # ventana de escritorio
 ```
+
+`DEBUG=1 ./start.sh` recarga sola al editar el código; en ese modo solo
+escucha en esta PC (el depurador permite ejecutar código).
+
+### Contraseña de acceso
+
+La versión web (`./start.sh`) pide contraseña; la de escritorio no. La
+primera vez se crea entrando desde esta misma PC (`https://localhost:5003`):
+desde otro dispositivo no se puede elegir. Para cambiarla:
+`.venv/bin/python -m app.acceso`. Tras 5 intentos fallidos, esa IP espera 5
+minutos. `ACCESO=0 ./start.sh` la desactiva.
+
+### HTTPS en la red de casa
+
+`./generar_certificado.sh` crea una autoridad certificante propia y un
+certificado para esta PC (localhost, su nombre y su IP de la red), en
+`instance/certs/`. Con eso `./start.sh` sirve por **https://** (ej.
+`https://192.168.1.26:5003` desde el celular); `HTTPS=0 ./start.sh` vuelve a
+http. Si cambia la IP de la PC, correr de nuevo el script (conviene fijarla en
+el router).
+
+Para que el navegador no avise, cada dispositivo tiene que confiar en
+`instance/certs/bitacora-ca.crt` (nunca compartir `bitacora-ca.key`):
+
+- **Linux (esta PC)**: `sudo trust anchor instance/certs/bitacora-ca.crt`.
+  Firefox usa su propio almacén: Ajustes → Privacidad → Certificados →
+  Importar.
+- **Android**: copiar el `.crt` al teléfono → Ajustes → Seguridad →
+  Cifrado y credenciales → Instalar un certificado → Certificado de CA.
+- **iPhone**: abrir el `.crt` (por AirDrop/mail) → Ajustes → Perfil
+  descargado → Instalar; después Ajustes → General → Información →
+  Ajustes de confianza de certificados → activarlo.
+- **Windows**: doble clic en el `.crt` → Instalar certificado → Equipo
+  local → "Entidades de certificación raíz de confianza".
 
 ## Compilar los instaladores
 

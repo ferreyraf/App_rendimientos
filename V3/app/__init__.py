@@ -19,6 +19,7 @@ def create_app():
     with app.app_context():
         db.init_db()
 
+    from . import acceso
     from .hoy import bp as bp_hoy
     from .routes import bp
     from .entrenamiento.rutas import bp as bp_entrenamiento
@@ -28,6 +29,7 @@ def create_app():
     app.register_blueprint(bp_hoy)
     app.register_blueprint(bp_rutina)
     app.register_blueprint(bp_entrenamiento)
+    acceso.init_app(app)
     _register_error_handlers(app)
     app.add_template_filter(formato_ar, "ar")
     app.add_template_filter(formato_pesos, "pesos")

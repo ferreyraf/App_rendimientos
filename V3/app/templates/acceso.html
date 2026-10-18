@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ app_name }}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='icono.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<main class="acceso">
+  <section class="chart-card acceso-caja">
+    <img src="{{ url_for('static', filename='icono.png') }}" alt="" width="56" height="56">
+    <h1>{{ app_name }}</h1>
+    {% if modo == "crear" and not local %}
+      <p class="subtitle">Todavía no hay contraseña. Creala desde la PC donde corre la app, entrando a <strong>https://localhost:{{ request.host.rsplit(":", 1)[-1] }}</strong>.</p>
+    {% else %}
+      <form method="post" class="acceso-form">
+        <input type="hidden" name="siguiente" value="{{ siguiente }}">
+        {% if modo == "crear" %}
+          <p class="subtitle">Elegí la contraseña para entrar desde otros dispositivos (mínimo {{ largo_minimo }} caracteres).</p>
+          <label for="clave">Contraseña nueva</label>
+          <input id="clave" type="password" name="clave" required minlength="{{ largo_minimo }}" autocomplete="new-password" autofocus>
+          <label for="repetir">Repetila</label>
+          <input id="repetir" type="password" name="repetir" required minlength="{{ largo_minimo }}" autocomplete="new-password">
+          <button type="submit" class="btn-primary">Crear y entrar</button>
+        {% else %}
+          <label for="clave">Contraseña</label>
+          <input id="clave" type="password" name="clave" required autocomplete="current-password" autofocus>
+          <button type="submit" class="btn-primary">Entrar</button>
+        {% endif %}
+      </form>
+    {% endif %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <p class="acceso-error" role="alert">{{ message }}</p>
+      {% endfor %}
+    {% endwith %}
+  </section>
+</main>
+</body>
+</html>

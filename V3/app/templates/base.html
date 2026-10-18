@@ -114,6 +114,11 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
           Tema
         </button>
+        {% if acceso_activo %}
+          <form method="post" action="{{ url_for('acceso.salir') }}" class="sidebar-salir">
+            <button type="submit">Salir</button>
+          </form>
+        {% endif %}
       </div>
     </nav>
   </aside>
