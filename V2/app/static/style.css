@@ -2151,7 +2151,7 @@ table,
 
 /* --- Botones con degradé y brillo --- */
 
-button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not([role="tab"]),
+button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not([role="tab"]),
 .boton-primario {
   background: var(--button-bg);
   background-size: 160% 160%;
@@ -2159,7 +2159,7 @@ button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro
   transition: background-position 0.4s ease, box-shadow 0.25s ease, transform 0.15s ease;
 }
 
-button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not([role="tab"]):hover,
+button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not([role="tab"]):hover,
 .boton-primario:hover {
   filter: none;
   background-position: 100% 50%;
@@ -2616,4 +2616,642 @@ code {
 
 .campo-corto input {
   max-width: 8rem;
+}
+
+/* --- Pantalla fija: cada sección entra en la ventana sin scrollear --- */
+
+/* La página no se desplaza: el contenido se reparte el alto de la ventana y
+   lo que no entra rota en carruseles (o, en listas largas, se desplaza
+   adentro de su propio panel). Si la ventana es muy chica, el área de
+   contenido scrollea como último recurso. En pantallas angostas (menú
+   arriba) se vuelve al flujo normal. */
+@media (min-width: 901px) {
+  .app-shell {
+    height: 100vh;
+  }
+
+  .app-main {
+    height: 100vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 22px 30px 20px;
+  }
+
+  .app-main > * {
+    flex-shrink: 0;
+  }
+
+  .app-main > .llenar,
+  .llenar {
+    flex: 1 1 0;
+    min-height: 300px;
+  }
+
+  .page-header {
+    margin-bottom: 14px;
+  }
+}
+
+/* Contenedor que reparte su alto entre hijos (ej. dos carruseles lado a lado). */
+.fila-llena {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.fila-llena > * {
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .fila-llena {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Carrusel --- */
+
+.carrusel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 14px;
+  padding: 12px 18px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.carrusel-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.carrusel-pestanas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.carrusel-pestana {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.carrusel-pestana:hover {
+  filter: none;
+  color: var(--text-primary);
+}
+
+.carrusel-pestana[aria-selected="true"] {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.carrusel-titulo {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.carrusel-controles {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.carrusel-controles[hidden] {
+  display: none;
+}
+
+.carrusel-flecha {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--baseline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.carrusel-flecha:hover {
+  filter: none;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.carrusel-contador {
+  min-width: 3.2em;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.carrusel-cuerpo {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Antes de que arranque el script, solo el primer panel. */
+.carrusel:not(.carrusel-listo) .carrusel-slide ~ .carrusel-slide {
+  display: none;
+}
+
+.carrusel-slide {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.carrusel-slide[hidden] {
+  display: none;
+}
+
+.carrusel-entra-der { animation: carrusel-der 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+.carrusel-entra-izq { animation: carrusel-izq 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+
+@keyframes carrusel-der {
+  from { opacity: 0; transform: translateX(28px); }
+}
+
+@keyframes carrusel-izq {
+  from { opacity: 0; transform: translateX(-28px); }
+}
+
+.carrusel-slide > .subtitle:first-child {
+  margin-top: 0;
+}
+
+/* Gráfico que ocupa todo el alto libre de su panel (Chart.js con
+   maintainAspectRatio: false toma el tamaño de este contenedor). */
+.grafico-caja {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 180px;
+}
+
+/* Ticker de alertas: una a la vez, con flechas a la derecha. */
+.carrusel-modo-ticker {
+  position: relative;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.carrusel-modo-ticker .carrusel-cabecera {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 12px;
+  margin: 0;
+  transform: translateY(-50%);
+}
+
+.carrusel-modo-ticker .carrusel-slide {
+  overflow: visible;
+}
+
+.carrusel-modo-ticker .alerta {
+  padding-right: 130px;
+}
+
+/* Línea chica de contexto arriba de un panel del carrusel. */
+.slide-meta {
+  margin: 0 0 10px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.alertas .carrusel-slide {
+  overflow: visible;
+}
+
+@media (min-width: 901px) {
+  .alerta {
+    padding: 10px 16px;
+  }
+
+  .hero-card {
+    padding: 16px 24px;
+    gap: 20px;
+  }
+
+  .hero-valor {
+    font-size: 2.5rem;
+  }
+
+  .stat-tile {
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* Paneles con lista: las filas se reparten el alto disponible. */
+.slide-repartido {
+  justify-content: space-evenly;
+}
+
+.slide-repartido > .slide-meta {
+  margin-bottom: 0;
+}
+
+.slide-repartido .barra-categoria {
+  margin-bottom: 0;
+}
+
+.carrusel .fila-movimiento {
+  min-height: 34px;
+}
+
+/* Barras de desplazamiento finas y del color del tema (las internas de
+   paneles y listas, que son las únicas que quedan). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--baseline) transparent;
+}
+
+/* Formulario en una sola fila (Proyección y similares). */
+.barra-herramientas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.barra-herramientas .campo {
+  margin: 0;
+}
+
+.barra-herramientas button {
+  min-height: 38px;
+}
+
+.aportes-futuros {
+  display: contents;
+}
+
+.aporte-futuro-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 8px;
+  border: 1px dashed var(--baseline);
+  border-radius: 10px;
+}
+
+.aporte-futuro-row input[type="number"] {
+  width: 8.5rem;
+}
+
+/* Tabla que ocupa el panel y desplaza solo sus filas, con el encabezado fijo. */
+.tabla-llena {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tabla-llena thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.grafico-caja[hidden] {
+  display: none;
+}
+
+/* Gráficos: selector de mes + totales del mes en una fila. */
+.flujo-toolbar {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.flujo-toolbar .mes-selector {
+  align-self: center;
+}
+
+@media (max-width: 1100px) {
+  .flujo-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .flujo-toolbar .mes-selector {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Herramientas (Calculadora, Recuperación): formulario a la izquierda y
+   resultados a la derecha, ocupando todo el alto. */
+.layout-herramienta {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.panel-herramienta {
+  align-self: start;
+  max-width: none;
+  margin: 0;
+  padding: 1.1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.herramienta-resultados {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.herramienta-resultados > * {
+  flex-shrink: 0;
+}
+
+.herramienta-resultados > .llenar {
+  flex: 1 1 0;
+  min-height: 260px;
+  margin-bottom: 0;
+}
+
+.columna-llena {
+  display: flex;
+  flex-direction: column;
+}
+
+.columna-llena > h2 {
+  margin-top: 0;
+}
+
+.check-linea {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+}
+
+.check-linea input {
+  width: auto;
+  margin-top: 0.2rem;
+}
+
+.vacio-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  border: 1px dashed var(--baseline);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .layout-herramienta {
+    grid-template-columns: 1fr;
+  }
+}
+
+.herramienta-resultados .kpi-row {
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+}
+
+/* Historial: los días se desplazan dentro de su panel. */
+.lista-dias {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Lista que ocupa el alto libre y desplaza solo sus filas. */
+.lista-llena {
+  overflow-y: auto;
+  margin-bottom: 0;
+}
+
+/* --- Configuración: cada pestaña ocupa el alto libre --- */
+
+@media (min-width: 901px) {
+  .tabs {
+    margin-bottom: 14px;
+  }
+
+  .app-main > .panel-pestana:not([hidden]) {
+    flex: 1 1 0;
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-pestana > * {
+    flex-shrink: 0;
+  }
+
+  .panel-pestana > .llenar {
+    flex: 1 1 0;
+    min-height: 0;
+    margin-bottom: 0;
+  }
+}
+
+/* Lista (carrusel) + panel de edición lado a lado, los dos a toda altura. */
+@media (min-width: 1101px) {
+  .panel-pestana > .config-split {
+    flex: 1 1 0;
+    min-height: 0;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+
+  .config-split > .config-lista {
+    min-height: 0;
+    margin-bottom: 0;
+  }
+
+  .config-split > .panel-edicion {
+    position: static;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+.config-lista.carrusel {
+  gap: 0;
+}
+
+/* Listas de Configuración: las filas van de borde a borde del panel, así
+   que el relleno lateral lo ponen la cabecera y las filas, no el carrusel. */
+.config-lista.carrusel {
+  padding: 12px 0 0;
+}
+
+.config-lista .carrusel-cabecera,
+.config-lista .slide-meta,
+.config-lista .lista-vacia {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.config-lista .fila-config {
+  padding: 8px 18px;
+}
+
+.config-lista .lista-pie {
+  margin-top: auto;
+}
+
+.ajuste-card .ajuste-meta .badge {
+  margin-right: 4px;
+}
+
+.tabla-billeteras th,
+.tabla-billeteras td {
+  padding: 8px 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.tabla-billeteras th:first-child,
+.tabla-billeteras td:first-child {
+  padding-left: 14px;
+  white-space: normal;
+}
+
+.tabla-billeteras input[type="time"] {
+  width: 6.9rem;
+}
+
+.tabla-billeteras input[type="number"] {
+  width: 6.4rem;
+}
+
+.tabla-billeteras input[name="tna"] {
+  width: 5rem;
+}
+
+/* Ajustes por inflación: cada ajuste en una sola línea. */
+.ajuste-card .tabla-config td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.ajuste-card .btn-usar-ipc {
+  min-height: 30px;
+  margin-left: 6px;
+  padding: 0 0.7rem;
+}
+
+/* Indicadores siempre en una sola fila en escritorio. */
+@media (min-width: 901px) {
+  .kpi-row {
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  }
+}
+
+/* Ventanas bajas (ej. la ventana mínima o una notebook chica): todo más
+   apretado para que siga entrando sin desplazar. */
+@media (min-width: 901px) and (max-height: 760px) {
+  .app-main {
+    padding: 14px 22px 12px;
+  }
+
+  .app-main h1 {
+    font-size: 1.35rem;
+  }
+
+  .page-header {
+    margin-bottom: 10px;
+  }
+
+  .hero-card {
+    padding: 12px 18px;
+  }
+
+  .hero-valor {
+    font-size: 2rem;
+  }
+
+  .hero-decimales {
+    font-size: 1.2rem;
+  }
+
+  .stat-tile {
+    padding: 0.55rem 0.8rem;
+  }
+
+  .stat-tile .stat-value {
+    font-size: 1.1rem;
+  }
+
+  .stat-tile .stat-note {
+    display: none;
+  }
+
+  .kpi-row,
+  .alertas,
+  .hero-card,
+  .carrusel,
+  .fila-llena,
+  .barra-herramientas,
+  .flujo-toolbar {
+    margin-bottom: 10px;
+  }
+
+  .app-main > .llenar,
+  .llenar {
+    min-height: 220px;
+  }
+
+  .grafico-caja {
+    min-height: 140px;
+  }
+}
+
+.panel-herramienta .wallet-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 0.6rem;
 }

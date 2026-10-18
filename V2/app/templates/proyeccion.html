@@ -1,34 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Proyección a futuro</h1>
-<p class="subtitle">Estima el capital del rulo a una fecha futura, asumiendo que las tasas y horarios actuales se mantienen</p>
+<header class="page-header">
+  <div>
+    <h1>Proyección a futuro</h1>
+    <p class="subtitle">Capital del rulo a una fecha futura, si las tasas y horarios actuales se mantienen</p>
+  </div>
+</header>
 
-<form method="post" class="config-form">
-  <label for="fecha_objetivo">Fecha objetivo</label>
-  <input type="date" id="fecha_objetivo" name="fecha_objetivo" value="{{ fecha_objetivo.isoformat() }}" required>
-
-  <p class="subtitle" style="margin-top: 1rem;">
-    Aportes futuros planeados (opcional) — solo se usan para este cálculo, no se guardan
-  </p>
-  <div id="aportesFuturosContainer">
+<form method="post" class="barra-herramientas">
+  <div class="campo">
+    <label for="fecha_objetivo">Fecha objetivo</label>
+    <input type="date" id="fecha_objetivo" name="fecha_objetivo" value="{{ fecha_objetivo.isoformat() }}" required>
+  </div>
+  <div id="aportesFuturosContainer" class="aportes-futuros">
     {% for fecha, monto in aportes_planeados %}
-    <div class="inline-form aporte-futuro-row">
-      <input type="date" name="aporte_futuro_fecha" value="{{ fecha.isoformat() }}">
-      <input type="number" step="0.01" min="0.01" name="aporte_futuro_monto" value="{{ monto }}" placeholder="Monto">
-      <button type="button" onclick="this.parentElement.remove()">Quitar</button>
+    <div class="aporte-futuro-row">
+      <input type="date" name="aporte_futuro_fecha" value="{{ fecha.isoformat() }}" aria-label="Fecha del aporte planeado">
+      <input type="number" step="0.01" min="0.01" name="aporte_futuro_monto" value="{{ monto }}" placeholder="Monto" aria-label="Monto del aporte planeado">
+      <button type="button" class="btn-icono" onclick="this.parentElement.remove()" aria-label="Quitar aporte planeado">×</button>
     </div>
     {% endfor %}
   </div>
-  <button type="button" id="agregarAporteFuturo">+ Agregar aporte planeado</button>
-
+  <button type="button" class="btn-secondary" id="agregarAporteFuturo" title="Solo se usan para este cálculo, no se guardan">+ Aporte planeado</button>
   <button type="submit">Proyectar</button>
 </form>
 
 <template id="aporteFuturoTemplate">
-  <div class="inline-form aporte-futuro-row">
-    <input type="date" name="aporte_futuro_fecha">
-    <input type="number" step="0.01" min="0.01" name="aporte_futuro_monto" placeholder="Monto">
-    <button type="button" onclick="this.parentElement.remove()">Quitar</button>
+  <div class="aporte-futuro-row">
+    <input type="date" name="aporte_futuro_fecha" aria-label="Fecha del aporte planeado">
+    <input type="number" step="0.01" min="0.01" name="aporte_futuro_monto" placeholder="Monto" aria-label="Monto del aporte planeado">
+    <button type="button" class="btn-icono" onclick="this.parentElement.remove()" aria-label="Quitar aporte planeado">×</button>
   </div>
 </template>
 
@@ -43,86 +44,91 @@
 
 <div class="kpi-row">
   <div class="stat-tile">
-    <p class="stat-label">Capital hoy ({{ hoy.strftime("%d/%m/%Y") }})</p>
+    <p class="stat-label">Capital hoy ({{ hoy.strftime("%d/%m") }})</p>
     <p class="stat-value">{{ capital_hoy|pesos }}</p>
   </div>
   <div class="stat-tile">
-    <p class="stat-label">Capital proyectado al {{ fecha_objetivo.strftime("%d/%m/%Y") }}</p>
+    <p class="stat-label">Proyectado al {{ fecha_objetivo.strftime("%d/%m/%Y") }}</p>
     <p class="stat-value">{{ capital_final|pesos }}</p>
   </div>
   <div class="stat-tile">
-    <p class="stat-label">Ganancia proyectada en el período</p>
+    <p class="stat-label">Ganancia en el período</p>
     <p class="stat-value {{ 'positivo' if rendimiento_proyectado >= 0 else 'negativo' }}">{{ rendimiento_proyectado|pesos }}</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">Sin rulo (sin intereses) al {{ fecha_objetivo.strftime("%d/%m/%Y") }}</p>
-    <p class="stat-value {{ 'negativo' if capital_sin_rulo_final < 0 }}">{{ capital_sin_rulo_final|pesos }}</p>
   </div>
   <div class="stat-tile">
     <p class="stat-label">Lo que suma el rulo vs. sin rulo</p>
     <p class="stat-value {{ 'positivo' if aporte_del_rulo >= 0 else 'negativo' }}">{{ aporte_del_rulo|pesos }}</p>
   </div>
-  <div class="stat-tile">
-    <p class="stat-label">Si dejaras todo quieto (mejor TNA activa: {{ mejor_tna|ar }}%)</p>
-    <p class="stat-value">{{ capital_quieto|pesos }}</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">Ventaja de rotar vs. quieto</p>
-    <p class="stat-value {{ 'positivo' if ventaja_rulo_proyectada >= 0 else 'negativo' }}">{{ ventaja_rulo_proyectada|pesos }}</p>
-  </div>
 </div>
-<p class="subtitle">
-  El capital "quieto" descuenta los mismos gastos e ingresos reales que el rulo, solo cambia la estrategia (una billetera fija en vez de rotar)
-</p>
-{% if aportes_planeados %}
-<p class="subtitle">
-  Incluye {{ aportes_planeados|length }} aporte(s) planeado(s):
-  {% for fecha, monto in aportes_planeados %}{{ monto|pesos }} el {{ fecha.strftime("%d/%m/%Y") }}{{ ", " if not loop.last }}{% endfor %}
-</p>
-{% endif %}
 
-<section class="chart-card">
-  <h2>Evolución del capital (real + proyectado)</h2>
-  <p class="subtitle">"Sin rulo" es la misma plata, con los mismos aportes, ingresos y gastos, pero sin generar ningún interés. La distancia entre las líneas es lo que aporta el rulo.</p>
-  <canvas id="proyeccionChart" height="120" role="img" aria-label="Capital real hasta hoy y proyectado hacia la fecha objetivo"></canvas>
-  <details>
-    <summary class="subtitle">Ver como tabla</summary>
-    <table>
-      <thead><tr><th>Fecha</th><th>Capital de cierre</th><th>Sin rulo</th><th>Diferencia</th><th></th></tr></thead>
-      <tbody>
-        {% for point in capital_series %}
-          <tr>
-            <td>{{ point.date }}</td>
-            <td>{{ point.capital_cierre|pesos }}</td>
-            <td>{{ point.sin_rulo|pesos }}</td>
-            <td>{{ (point.capital_cierre - point.sin_rulo)|pesos }}</td>
-            <td>{% if point.futuro %}<span class="badge">proyectado</span>{% endif %}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </details>
-</section>
+<section class="carrusel llenar" data-carrusel="proyeccion" aria-label="Proyección">
+  <div class="carrusel-cuerpo">
+    <div class="carrusel-slide" data-titulo="Evolución del capital">
+      <p class="slide-meta">Línea llena: real hasta hoy · punteada: proyectado · naranja: la misma plata sin ningún interés. La distancia entre las líneas es lo que aporta el rulo.</p>
+      <div class="grafico-caja">
+        <canvas id="proyeccionChart" role="img" aria-label="Capital real hasta hoy y proyectado hacia la fecha objetivo"></canvas>
+      </div>
+    </div>
 
-<section class="chart-card">
-  <h2>Ganancia numérica hasta el deadline</h2>
-  <p class="subtitle">Cuánto ganás acumulado desde hoy hasta cada tramo, en pesos, camino a la fecha objetivo</p>
-  <canvas id="gananciaChart" height="120" role="img" aria-label="Ganancia acumulada en pesos por tramo, desde hoy hasta la fecha objetivo"></canvas>
-  <details>
-    <summary class="subtitle">Ver como tabla</summary>
-    <table>
-      <thead><tr><th>Fecha</th><th>Ganancia del tramo</th><th>Ganancia acumulada</th></tr></thead>
-      <tbody>
-        {% for point in ganancia_periodica %}
-          <tr>
-            <td>{{ point.date }}</td>
-            <td>{{ point.ganancia_periodo|pesos }}</td>
-            <td>{{ point.ganancia_acumulada|pesos }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </details>
+    <div class="carrusel-slide" data-titulo="Ganancia por tramo">
+      <p class="slide-meta">Cuánto ganás acumulado desde hoy hasta cada tramo, camino a la fecha objetivo</p>
+      <div class="grafico-caja">
+        <canvas id="gananciaChart" role="img" aria-label="Ganancia acumulada en pesos por tramo, desde hoy hasta la fecha objetivo"></canvas>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Rulo vs. quieto">
+      <dl class="lista-datos">
+        <div><dt>Con rulo al {{ fecha_objetivo.strftime("%d/%m/%Y") }}</dt><dd><strong>{{ capital_final|pesos }}</strong></dd></div>
+        <div><dt>Sin rulo (la misma plata, sin intereses)</dt><dd class="{{ 'negativo' if capital_sin_rulo_final < 0 }}">{{ capital_sin_rulo_final|pesos }}</dd></div>
+        <div><dt>Todo quieto en la mejor billetera ({{ mejor_tna|ar }}% TNA)</dt><dd>{{ capital_quieto|pesos }}</dd></div>
+        <div><dt>Ventaja de rotar vs. quieto</dt><dd class="{{ 'positivo' if ventaja_rulo_proyectada >= 0 else 'negativo' }}"><strong>{{ ventaja_rulo_proyectada|pesos }}</strong></dd></div>
+      </dl>
+      <p class="subtitle">El capital "quieto" descuenta los mismos gastos e ingresos reales que el rulo; solo cambia la estrategia (una billetera fija en vez de rotar).</p>
+      {% if aportes_planeados %}
+      <p class="subtitle">
+        Incluye {{ aportes_planeados|length }} aporte(s) planeado(s):
+        {% for fecha, monto in aportes_planeados %}{{ monto|pesos }} el {{ fecha.strftime("%d/%m/%Y") }}{{ ", " if not loop.last }}{% endfor %}
+      </p>
+      {% endif %}
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Detalle diario">
+      <div class="table-scroll tabla-llena">
+        <table>
+          <thead><tr><th>Fecha</th><th class="num">Capital de cierre</th><th class="num">Sin rulo</th><th class="num">Diferencia</th><th></th></tr></thead>
+          <tbody>
+            {% for point in capital_series %}
+              <tr>
+                <td>{{ point.date }}</td>
+                <td class="num">{{ point.capital_cierre|pesos }}</td>
+                <td class="num">{{ point.sin_rulo|pesos }}</td>
+                <td class="num">{{ (point.capital_cierre - point.sin_rulo)|pesos }}</td>
+                <td>{% if point.futuro %}<span class="badge">proyectado</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Detalle por tramo">
+      <div class="table-scroll tabla-llena">
+        <table>
+          <thead><tr><th>Fecha</th><th class="num">Ganancia del tramo</th><th class="num">Ganancia acumulada</th></tr></thead>
+          <tbody>
+            {% for point in ganancia_periodica %}
+              <tr>
+                <td>{{ point.date }}</td>
+                <td class="num">{{ point.ganancia_periodo|pesos }}</td>
+                <td class="num">{{ point.ganancia_acumulada|pesos }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </section>
 
 <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
@@ -189,6 +195,7 @@
       ],
     },
     options: {
+      maintainAspectRatio: false,
       scales: {
         x: { ticks: { color: ink, maxTicksLimit: 10 }, grid: { color: grid } },
         y: { ticks: { color: ink, callback: (v) => '$' + Math.round(v).toLocaleString('es-AR') }, grid: { color: grid } },
@@ -245,6 +252,7 @@
       }],
     },
     options: {
+      maintainAspectRatio: false,
       layout: { padding: { top: 20 } },
       scales: {
         x: { ticks: { color: ink }, grid: { display: false } },

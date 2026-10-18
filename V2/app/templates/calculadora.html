@@ -1,10 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Calculadora rápida</h1>
-<p class="subtitle">Simulá un aporte puntual rotando solo entre las billeteras que elijas — no toca tus aportes ni gastos reales</p>
+<header class="page-header">
+  <div>
+    <h1>Calculadora rápida</h1>
+    <p class="subtitle">Simulá un aporte puntual rotando solo entre las billeteras que elijas — no toca tus aportes ni gastos reales</p>
+  </div>
+</header>
 
-<div class="two-col">
-  <form method="post" class="config-form">
+<div class="layout-herramienta llenar">
+  <form method="post" class="config-form panel-herramienta">
     <label>Billeteras a usar</label>
     <div class="wallet-checks">
       {% for w in wallets %}
@@ -27,24 +31,28 @@
     <button type="submit">Calcular</button>
   </form>
 
-  <section class="chart-card">
-    <h2>Evolución proyectada</h2>
-    <canvas id="calculadoraChart" height="160" role="img" aria-label="Evolución del capital simulado entre la fecha de ingreso y la fecha objetivo"></canvas>
-  </section>
-</div>
+  <div class="herramienta-resultados">
+    <div class="kpi-row">
+      <div class="stat-tile">
+        <p class="stat-label">Capital final ({{ fecha_objetivo.strftime("%d/%m/%Y") }})</p>
+        <p class="stat-value">{{ capital_final|pesos }}</p>
+      </div>
+      <div class="stat-tile">
+        <p class="stat-label">Rendimiento generado</p>
+        <p class="stat-value {{ 'positivo' if rendimiento >= 0 else 'negativo' }}">{{ rendimiento|pesos }}</p>
+      </div>
+      <div class="stat-tile">
+        <p class="stat-label">TEA implícita</p>
+        <p class="stat-value">{{ tea|ar }}%</p>
+      </div>
+    </div>
 
-<div class="kpi-row">
-  <div class="stat-tile">
-    <p class="stat-label">Capital final ({{ fecha_objetivo.strftime("%d/%m/%Y") }})</p>
-    <p class="stat-value">{{ capital_final|pesos }}</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">Rendimiento generado</p>
-    <p class="stat-value {{ 'positivo' if rendimiento >= 0 else 'negativo' }}">{{ rendimiento|pesos }}</p>
-  </div>
-  <div class="stat-tile">
-    <p class="stat-label">TEA implícita</p>
-    <p class="stat-value">{{ tea|ar }}%</p>
+    <section class="chart-card llenar columna-llena">
+      <h2>Evolución proyectada</h2>
+      <div class="grafico-caja">
+        <canvas id="calculadoraChart" role="img" aria-label="Evolución del capital simulado entre la fecha de ingreso y la fecha objetivo"></canvas>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -73,6 +81,7 @@
       }],
     },
     options: {
+      maintainAspectRatio: false,
       scales: {
         x: { ticks: { color: ink, maxTicksLimit: 8 }, grid: { color: grid } },
         y: { ticks: { color: ink }, grid: { color: grid } },

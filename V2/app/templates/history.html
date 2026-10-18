@@ -1,15 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Historial</h1>
-<p class="subtitle"><a href="{{ url_for('main.exportar_historial') }}">Exportar a CSV</a></p>
+<header class="page-header">
+  <div>
+    <h1>Historial</h1>
+    <p class="subtitle">Cómo evolucionó el rulo día a día · <a href="{{ url_for('main.exportar_historial') }}">Exportar a CSV</a></p>
+  </div>
+</header>
 
-{% if capital_series|length > 1 %}
-<section class="chart-card">
-  <h2>Evolución del capital</h2>
-  <canvas id="historialChart" height="100" role="img" aria-label="Evolución del capital de cierre día a día"></canvas>
-</section>
-{% endif %}
+<section class="carrusel llenar" data-carrusel="historial" aria-label="Historial">
+  <div class="carrusel-cuerpo">
+    {% if capital_series|length > 1 %}
+    <div class="carrusel-slide" data-titulo="Evolución del capital">
+      <div class="grafico-caja">
+        <canvas id="historialChart" role="img" aria-label="Evolución del capital de cierre día a día"></canvas>
+      </div>
+    </div>
+    {% endif %}
 
+    <div class="carrusel-slide" data-titulo="Detalle por día">
+      <div class="lista-dias">
 {% for s in summaries %}
 <details class="day-card" {{ "open" if loop.first }}>
   <summary class="day-summary">
@@ -59,6 +68,10 @@
 {% else %}
 <p class="subtitle">Todavía no hay historial.</p>
 {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
 
 {% if capital_series|length > 1 %}
 <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
@@ -83,6 +96,7 @@
       }],
     },
     options: {
+      maintainAspectRatio: false,
       scales: {
         x: { ticks: { color: token('--text-secondary'), maxTicksLimit: 10 }, grid: { color: token('--gridline') } },
         y: { ticks: { color: token('--text-secondary') }, grid: { color: token('--gridline') } },

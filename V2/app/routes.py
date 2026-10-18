@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import logging
+import math
 import platform
 import tempfile
 import sys
@@ -286,16 +287,63 @@ def _parse_inversion_form(form) -> tuple[str, float, float]:
     etiqueta = (form.get("etiqueta") or "").strip()
     if not etiqueta:
         raise ValueError("La etiqueta es obligatoria.")
-    monto = float(form["monto"])
+    monto = _numero(form["monto"])
     if monto <= 0:
         raise ValueError("El monto debe ser mayor a cero.")
-    tna = float(form.get("tna") or 0)
+    tna = _numero(form.get("tna") or 0, "la TNA")
     if tna < 0:
         raise ValueError("La TNA no puede ser negativa.")
     return etiqueta, monto, tna
 
 
 MONEDAS = ("ARS", "USD")
+
+# Tope para cualquier número cargado: muy por encima de cualquier monto real,
+# pero lejos de los valores que desbordan la simulación a infinito.
+NUMERO_MAXIMO = 1e12
+
+# Hasta dónde se puede simular hacia adelante (proyección, calculadora,
+# recuperación): más allá la simulación día a día tarda minutos.
+ANIOS_MAXIMOS_SIMULACION = 30
+
+
+def _numero(valor, campo: str = "el monto") -> float:
+    """float() que además rechaza NaN, infinitos y valores desmedidos: SQLite
+    guarda NaN como NULL y los infinitos rompen los cálculos después."""
+    try:
+        numero = float(str(valor).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"Revisá {campo}: no es un número válido.") from None
+    if not math.isfinite(numero) or abs(numero) > NUMERO_MAXIMO:
+        raise ValueError(f"Revisá {campo}: no es un número válido.")
+    return numero
+
+
+def _entero(valor, campo: str) -> int:
+    try:
+        return int(str(valor).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"Revisá {campo}: tiene que ser un número entero.") from None
+
+
+def _fecha(valor, campo: str) -> date:
+    try:
+        return date.fromisoformat(str(valor).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"Revisá {campo}: la fecha no es válida.") from None
+
+
+def _hora(valor, campo: str) -> str:
+    """Hora HH:MM válida (una hora mal guardada en una billetera rompe la
+    simulación en todas las pantallas)."""
+    try:
+        return datetime.strptime(str(valor).strip(), "%H:%M").strftime("%H:%M")
+    except (TypeError, ValueError):
+        raise ValueError(f"Revisá {campo}: tiene que ser una hora válida (HH:MM).") from None
+
+
+def _fecha_limite_simulacion(hoy: date) -> date:
+    return sumar_meses(hoy, 12 * ANIOS_MAXIMOS_SIMULACION)
 
 
 @bp.before_app_request
@@ -348,11 +396,11 @@ def _parse_extras(form) -> tuple[date | None, int]:
     if form.get("recurrente") != "on":
         return None, 0
     hasta_raw = (form.get("hasta") or "").strip()
-    hasta = date.fromisoformat(hasta_raw) if hasta_raw else None
+    hasta = _fecha(hasta_raw, "la fecha \"hasta\"") if hasta_raw else None
     desde_raw = (form.get("desde") or "").strip()
-    if hasta and desde_raw and hasta < date.fromisoformat(desde_raw):
+    if hasta and desde_raw and hasta < _fecha(desde_raw, "la fecha \"desde\""):
         raise ValueError("La fecha \"hasta\" no puede ser anterior a \"desde\".")
-    aguinaldo = int(form.get("aguinaldo") or 0)
+    aguinaldo = _entero(form.get("aguinaldo") or 0, "la opción de aguinaldo")
     if aguinaldo not in (0, 1, 2):
         raise ValueError("Opción de aguinaldo inválida.")
     return hasta, aguinaldo
@@ -364,7 +412,7 @@ def _parse_movimiento_form(
     etiqueta = (form.get("etiqueta") or "").strip()
     if not etiqueta:
         raise ValueError("La etiqueta es obligatoria.")
-    monto = float(form["monto"])
+    monto = _numero(form["monto"])
     if monto <= 0:
         raise ValueError("El monto debe ser mayor a cero.")
     categoria = (form.get("categoria") or "").strip()
@@ -373,29 +421,29 @@ def _parse_movimiento_form(
     aumento_inicio = None
     aumento_periodo_meses = 4
     if recurrente:
-        dia_mes = int(form["dia_mes"])
+        dia_mes = _entero(form["dia_mes"], "el día del mes")
         dia_habil = form.get("dia_habil") == "on"
         limite = 23 if dia_habil else 31
         if not (1 <= dia_mes <= limite):
             raise ValueError(f"El día {'hábil' if dia_habil else 'del mes'} debe estar entre 1 y {limite}.")
         # En un recurrente, `fecha` es el "desde" opcional (ver MovimientoRecurrente).
         desde_raw = (form.get("desde") or "").strip()
-        fecha = date.fromisoformat(desde_raw) if desde_raw else None
-        aumento_pct = float(form.get("aumento_pct") or 0)
+        fecha = _fecha(desde_raw, "la fecha \"desde\"") if desde_raw else None
+        aumento_pct = _numero(form.get("aumento_pct") or 0, "el aumento periódico")
         if aumento_pct < 0:
             raise ValueError("El aumento periódico no puede ser negativo.")
-        aumento_periodo_meses = int(form.get("aumento_periodo_meses") or 4)
+        aumento_periodo_meses = _entero(form.get("aumento_periodo_meses") or 4, "el período del aumento")
         if aumento_periodo_meses < 1:
             raise ValueError("El período del aumento debe ser de al menos 1 mes.")
         aumento_inicio_raw = (form.get("aumento_inicio") or "").strip()
         if aumento_pct > 0:
             if not aumento_inicio_raw:
                 raise ValueError("Indicá desde cuándo se cuenta el aumento periódico.")
-            aumento_inicio = date.fromisoformat(aumento_inicio_raw)
+            aumento_inicio = _fecha(aumento_inicio_raw, "el inicio del aumento")
         elif aumento_inicio_raw:
-            aumento_inicio = date.fromisoformat(aumento_inicio_raw)
+            aumento_inicio = _fecha(aumento_inicio_raw, "el inicio del aumento")
     else:
-        fecha = date.fromisoformat(form["fecha"])
+        fecha = _fecha(form["fecha"], "la fecha")
         dia_mes = None
         dia_habil = False
     return (
@@ -497,7 +545,7 @@ def dashboard():
         if siguiente and (proximo_ajuste is None or siguiente["fecha"] < proximo_ajuste["fecha"]):
             proximo_ajuste = dict(siguiente, etiqueta=m.etiqueta)
 
-    proximos = proximos_movimientos(egresos, ingresos, hoy + timedelta(days=1), hoy + timedelta(days=45))[:7]
+    proximos = proximos_movimientos(egresos, ingresos, hoy + timedelta(days=1), hoy + timedelta(days=45))[:6]
 
     return render_template(
         "dashboard.html",
@@ -546,7 +594,7 @@ def configuracion():
 
     if request.method == "POST":
         try:
-            monto = float(request.form["monto"])
+            monto = _numero(request.form["monto"])
             fecha = date.fromisoformat(request.form["fecha"])
         except (KeyError, ValueError):
             flash("Datos inválidos: revisá el monto y la fecha.", "error")
@@ -599,7 +647,7 @@ def configuracion():
 def editar_aporte(aporte_id):
     conn = db.get_db()
     try:
-        monto = float(request.form["monto"])
+        monto = _numero(request.form["monto"])
         fecha = date.fromisoformat(request.form["fecha"])
     except (KeyError, ValueError):
         flash("Datos inválidos: revisá el monto y la fecha.", "error")
@@ -612,8 +660,10 @@ def editar_aporte(aporte_id):
         flash("La fecha del aporte no puede ser futura.", "error")
         return redirect(url_for("main.configuracion", _anchor="aportes"))
 
-    db.update_aporte(conn, aporte_id, fecha, monto)
-    flash("Aporte actualizado.", "success")
+    if db.update_aporte(conn, aporte_id, fecha, monto):
+        flash("Aporte actualizado.", "success")
+    else:
+        flash("Ese aporte ya no existe.", "error")
     return redirect(url_for("main.configuracion", _anchor="aportes"))
 
 
@@ -668,10 +718,12 @@ def editar_egreso(egreso_id):
         flash(str(exc), "error")
         return redirect(url_for("main.configuracion", _anchor="gastos"))
 
-    db.update_egreso(
+    if not db.update_egreso(
         conn, egreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria,
         aumento_pct, aumento_inicio, aumento_periodo_meses, moneda,
-    )
+    ):
+        flash("Ese egreso ya no existe.", "error")
+        return redirect(url_for("main.configuracion", _anchor="gastos"))
     db.guardar_extras(conn, "egresos", egreso_id, hasta, 0)
     flash("Egreso actualizado.", "success")
     return redirect(url_for("main.configuracion", _anchor="gastos"))
@@ -699,7 +751,7 @@ def guardar_ajuste(tipo, mov_id):
     mov = dict(getter(conn)).get(mov_id)
     try:
         fecha = date.fromisoformat(request.form["fecha"])
-        pct = float(request.form["pct"].replace(",", "."))
+        pct = _numero(request.form["pct"].replace(",", "."), "el porcentaje")
     except (KeyError, ValueError):
         flash("Datos inválidos: revisá el porcentaje del ajuste.", "error")
         return redirect(url_for("main.configuracion", _anchor="ajustes"))
@@ -864,10 +916,12 @@ def editar_ingreso(ingreso_id):
         flash(str(exc), "error")
         return redirect(url_for("main.configuracion", _anchor="ingresos"))
 
-    db.update_ingreso(
+    if not db.update_ingreso(
         conn, ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil,
         aumento_pct, aumento_inicio, aumento_periodo_meses, moneda,
-    )
+    ):
+        flash("Ese ingreso ya no existe.", "error")
+        return redirect(url_for("main.configuracion", _anchor="ingresos"))
     db.guardar_extras(conn, "ingresos", ingreso_id, hasta, aguinaldo)
     flash("Ingreso actualizado.", "success")
     return redirect(url_for("main.configuracion", _anchor="ingresos"))
@@ -917,13 +971,17 @@ def cargar_saldo_real():
     """Saldo real total del rulo a una fecha: la simulación se recalibra a
     ese valor al cierre de ese día."""
     volver = request.form.get("volver") or url_for("main.dashboard")
-    if not volver.startswith("/"):
+    # Solo rutas internas: "//sitio" o "/\sitio" el navegador los toma como otro dominio.
+    if not volver.startswith("/") or volver.startswith(("//", "/\\")):
         volver = url_for("main.dashboard")
     try:
-        monto = float(request.form["monto"])
+        monto = _numero(request.form["monto"], "el saldo")
         fecha = date.fromisoformat(request.form.get("fecha") or date.today().isoformat())
     except (KeyError, ValueError):
         flash("Datos inválidos: revisá el saldo.", "error")
+        return redirect(volver)
+    if monto < 0:
+        flash("El saldo real no puede ser negativo.", "error")
         return redirect(volver)
     if fecha > date.today():
         flash("El saldo real no puede ser de una fecha futura.", "error")
@@ -1080,6 +1138,10 @@ def este_mes():
     try:
         anio, mes = (int(x) for x in request.args.get("mes", f"{hoy.year}-{hoy.month}").split("-"))
         date(anio, mes, 1)
+        # Margen amplio pero acotado: los meses vecinos y los aguinaldos se
+        # calculan con fechas que se salen del rango de `date` en los extremos.
+        if abs(anio - hoy.year) > 100:
+            raise ValueError
     except ValueError:
         anio, mes = hoy.year, hoy.month
     conn = db.get_db()
@@ -1120,7 +1182,7 @@ def registrar_pago():
         movimiento_id = int(request.form["id"])
         fecha = date.fromisoformat(request.form["fecha"])
         clave = request.form.get("clave", "")
-        monto = float(request.form["monto"])
+        monto = _numero(request.form["monto"])
     except (KeyError, ValueError):
         flash("Datos inválidos: revisá el monto.", "error")
         return redirect(volver)
@@ -1217,14 +1279,17 @@ def billeteras():
 def actualizar_billetera(wallet_id):
     conn = db.get_db()
     try:
-        tna = float(request.form["tna"])
-        capture_time = request.form["capture_time"]
-        payout_time = request.form["payout_time"]
-        monto_minimo = float(request.form.get("monto_minimo") or 0)
+        tna = _numero(request.form["tna"], "la TNA")
+        capture_time = _hora(request.form["capture_time"], "la hora de captura")
+        payout_time = _hora(request.form["payout_time"], "la hora de acreditación")
+        monto_minimo = _numero(request.form.get("monto_minimo") or 0, "el piso")
         monto_maximo_raw = request.form.get("monto_maximo")
-        monto_maximo = float(monto_maximo_raw) if monto_maximo_raw else None
-    except (KeyError, ValueError):
+        monto_maximo = _numero(monto_maximo_raw, "el techo") if monto_maximo_raw else None
+    except KeyError:
         flash("Datos inválidos: revisá los campos de la billetera.", "error")
+        return redirect(url_for("main.configuracion", _anchor="billeteras"))
+    except ValueError as exc:
+        flash(str(exc), "error")
         return redirect(url_for("main.configuracion", _anchor="billeteras"))
 
     if tna < 0:
@@ -1238,10 +1303,12 @@ def actualizar_billetera(wallet_id):
         return redirect(url_for("main.configuracion", _anchor="billeteras"))
 
     activo = request.form.get("activo") == "on"
-    db.update_wallet(
+    if db.update_wallet(
         conn, wallet_id, tna, capture_time, payout_time, activo, monto_minimo, monto_maximo
-    )
-    flash("Billetera actualizada.", "success")
+    ):
+        flash("Billetera actualizada.", "success")
+    else:
+        flash("Esa billetera no existe.", "error")
     return redirect(url_for("main.configuracion", _anchor="billeteras"))
 
 
@@ -1299,6 +1366,9 @@ def proyeccion():
         if fecha_objetivo <= hoy:
             flash("La fecha objetivo debe ser posterior a hoy.", "error")
             return redirect(url_for("main.proyeccion"))
+        if fecha_objetivo > _fecha_limite_simulacion(hoy):
+            flash(f"La proyección llega hasta {ANIOS_MAXIMOS_SIMULACION} años desde hoy.", "error")
+            return redirect(url_for("main.proyeccion"))
 
         fechas_planeadas = request.form.getlist("aporte_futuro_fecha")
         montos_planeados = request.form.getlist("aporte_futuro_monto")
@@ -1307,7 +1377,7 @@ def proyeccion():
                 continue
             try:
                 fecha_planeada = date.fromisoformat(fecha_raw)
-                monto_planeado = float(monto_raw)
+                monto_planeado = _numero(monto_raw)
             except ValueError:
                 flash("Uno de los aportes planeados tiene datos inválidos.", "error")
                 return redirect(url_for("main.proyeccion"))
@@ -1411,7 +1481,7 @@ def calculadora():
     if request.method == "POST":
         selected_ids = set(request.form.getlist("wallet_id"))
         try:
-            monto = float(request.form.get("monto", ""))
+            monto = _numero(request.form.get("monto", ""))
             fecha_ingreso = date.fromisoformat(request.form["fecha_ingreso"])
             fecha_objetivo = date.fromisoformat(request.form["fecha_objetivo"])
         except (KeyError, ValueError):
@@ -1422,6 +1492,11 @@ def calculadora():
                 error = "El monto debe ser mayor a cero."
             elif fecha_objetivo <= fecha_ingreso:
                 error = "La fecha objetivo debe ser posterior a la fecha de ingreso."
+            elif (
+                fecha_objetivo > _fecha_limite_simulacion(hoy)
+                or fecha_objetivo > _fecha_limite_simulacion(fecha_ingreso)
+            ):
+                error = f"La simulación abarca como máximo {ANIOS_MAXIMOS_SIMULACION} años."
             elif not selected_ids:
                 error = "Elegí al menos una billetera."
     else:
@@ -1499,7 +1574,7 @@ def recuperacion():
         etiqueta = (request.form.get("etiqueta") or "").strip()
         incluir_movimientos = request.form.get("incluir_movimientos") == "on"
         try:
-            monto_gasto = float(request.form["monto"])
+            monto_gasto = _numero(request.form["monto"])
             fecha_gasto = date.fromisoformat(request.form["fecha_gasto"])
         except (KeyError, ValueError):
             flash("Datos inválidos: revisá el monto y la fecha del gasto.", "error")
@@ -1509,6 +1584,9 @@ def recuperacion():
             return redirect(url_for("main.recuperacion"))
         if fecha_gasto < inicio_rulo:
             flash("La fecha del gasto no puede ser anterior al inicio del rulo.", "error")
+            return redirect(url_for("main.recuperacion"))
+        if fecha_gasto > _fecha_limite_simulacion(hoy):
+            flash(f"La fecha del gasto puede estar como máximo {ANIOS_MAXIMOS_SIMULACION} años adelante.", "error")
             return redirect(url_for("main.recuperacion"))
 
         # El capital al día del gasto es siempre un hecho real (con los
@@ -1636,8 +1714,10 @@ def editar_inversion(inversion_id):
         flash(str(exc), "error")
         return redirect(url_for("main.patrimonio"))
 
-    db.update_inversion(conn, inversion_id, etiqueta, monto, tna)
-    flash("Inversión actualizada.", "success")
+    if db.update_inversion(conn, inversion_id, etiqueta, monto, tna):
+        flash("Inversión actualizada.", "success")
+    else:
+        flash("Esa inversión ya no existe.", "error")
     return redirect(url_for("main.patrimonio"))
 
 

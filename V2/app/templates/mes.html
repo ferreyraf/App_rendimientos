@@ -35,7 +35,7 @@
   </div>
 </section>
 
-<section class="lista-card" aria-label="Movimientos de {{ nombre_mes }}">
+<section class="lista-card lista-llena llenar" aria-label="Movimientos de {{ nombre_mes }}">
   {% for f in filas %}
     <div class="fila-pago {{ 'fila-pago-hecha' if f.real is not none }} {{ 'fila-pago-vencida' if f.vencido }}">
       <span class="fila-pago-fecha">{{ f.fecha.strftime("%d/%m") }}</span>

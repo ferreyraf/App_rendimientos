@@ -393,12 +393,13 @@ def get_wallet(conn, wallet_id):
 def update_wallet(
     conn, wallet_id, tna, capture_time, payout_time, activo, monto_minimo, monto_maximo
 ):
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE wallets SET tna = ?, capture_time = ?, payout_time = ?, activo = ?, "
         "monto_minimo = ?, monto_maximo = ? WHERE id = ?",
         (tna, capture_time, payout_time, int(activo), monto_minimo, monto_maximo, wallet_id),
     )
     conn.commit()
+    return cursor.rowcount > 0
 
 
 def get_aportes(conn):
@@ -414,11 +415,12 @@ def add_aporte(conn, fecha, monto):
 
 
 def update_aporte(conn, aporte_id, fecha, monto):
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE aportes SET fecha = ?, monto = ? WHERE id = ?",
         (fecha.isoformat(), monto, aporte_id),
     )
     conn.commit()
+    return cursor.rowcount > 0
 
 
 def delete_aporte(conn, aporte_id):
@@ -541,7 +543,7 @@ def _update_movimiento(
     conn, tabla, movimiento_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil,
     aumento_pct=0.0, aumento_inicio=None, aumento_periodo_meses=4, moneda="ARS",
 ):
-    conn.execute(
+    cursor = conn.execute(
         f"UPDATE {tabla} SET etiqueta = ?, monto = ?, recurrente = ?, fecha = ?, dia_mes = ?, "
         "dia_habil = ?, aumento_pct = ?, aumento_inicio = ?, aumento_periodo_meses = ?, moneda = ? "
         "WHERE id = ?",
@@ -560,6 +562,7 @@ def _update_movimiento(
         ),
     )
     conn.commit()
+    return cursor.rowcount > 0
 
 
 def _delete_movimiento(conn, tabla, movimiento_id):
@@ -669,7 +672,7 @@ def update_egreso(
     conn, egreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil, categoria,
     aumento_pct=0.0, aumento_inicio=None, aumento_periodo_meses=4, moneda="ARS",
 ):
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE egresos SET etiqueta = ?, monto = ?, recurrente = ?, fecha = ?, dia_mes = ?, "
         "dia_habil = ?, categoria = ?, aumento_pct = ?, aumento_inicio = ?, "
         "aumento_periodo_meses = ?, moneda = ? WHERE id = ?",
@@ -689,6 +692,7 @@ def update_egreso(
         ),
     )
     conn.commit()
+    return cursor.rowcount > 0
 
 
 def delete_egreso(conn, egreso_id):
@@ -713,7 +717,7 @@ def update_ingreso(
     conn, ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil,
     aumento_pct=0.0, aumento_inicio=None, aumento_periodo_meses=4, moneda="ARS",
 ):
-    _update_movimiento(
+    return _update_movimiento(
         conn, "ingresos", ingreso_id, etiqueta, monto, recurrente, fecha, dia_mes, dia_habil,
         aumento_pct, aumento_inicio, aumento_periodo_meses, moneda,
     )
@@ -736,11 +740,12 @@ def add_inversion(conn, etiqueta, monto, tna):
 
 
 def update_inversion(conn, inversion_id, etiqueta, monto, tna):
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE inversiones SET etiqueta = ?, monto = ?, tna = ? WHERE id = ?",
         (etiqueta, monto, tna, inversion_id),
     )
     conn.commit()
+    return cursor.rowcount > 0
 
 
 def delete_inversion(conn, inversion_id):

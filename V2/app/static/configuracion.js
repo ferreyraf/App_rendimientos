@@ -70,10 +70,13 @@
       panel.querySelectorAll(".fila-config[data-categoria]").forEach(function (fila) {
         fila.hidden = filtro !== "" && fila.dataset.categoria !== filtro;
       });
-      // Los meses que quedan sin filas visibles se ocultan enteros.
-      panel.querySelectorAll("details.lista-card").forEach(function (seccion) {
-        seccion.hidden = !seccion.querySelector(".fila-config:not([hidden])");
+      // Los meses que quedan sin filas visibles salen del carrusel (el
+      // primer panel, el de los recurrentes, queda siempre).
+      panel.querySelectorAll(".carrusel-slide + .carrusel-slide").forEach(function (seccion) {
+        seccion.dataset.oculto = seccion.querySelector(".fila-config:not([hidden])") ? "" : "1";
       });
+      var carrusel = panel.querySelector("[data-carrusel]");
+      if (carrusel) carrusel.dispatchEvent(new CustomEvent("carrusel:actualizar"));
     });
   });
 

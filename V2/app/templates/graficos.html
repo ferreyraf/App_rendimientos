@@ -1,92 +1,87 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Gráficos</h1>
+<header class="page-header">
+  <div>
+    <h1>Gráficos</h1>
+    <p class="subtitle">Ingresos y egresos de cada mes (recurrentes + puntuales). Los meses con * son proyectados.</p>
+  </div>
+  <div class="header-acciones">
+    <span class="chip">TEA lograda por el rulo <strong class="positivo">{{ tea_rulo|ar }}%</strong></span>
+    <span class="chip" title="Promedio de la TNA nominal de las billeteras activas">TNA promedio <strong>{{ tna_promedio|ar }}%</strong></span>
+  </div>
+</header>
 
-<div class="kpi-row">
-  <div class="stat-tile">
-    <p class="stat-label">TEA lograda por el rulo</p>
-    <p class="stat-value positivo">{{ tea_rulo|ar }}%</p>
+<div class="flujo-toolbar">
+  <div class="mes-selector">
+    <button type="button" id="mesAnterior" aria-label="Mes anterior">‹</button>
+    <select id="mesSelect" aria-label="Mes">
+      {% for m in flujo_mensual %}
+        <option value="{{ loop.index0 }}" {{ "selected" if m.clave == mes_actual }}>{{ m.nombre }}{{ " *" if m.proyectado }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" id="mesSiguiente" aria-label="Mes siguiente">›</button>
   </div>
   <div class="stat-tile">
-    <p class="stat-label">Promedio TNA nominal de las billeteras activas</p>
-    <p class="stat-value">{{ tna_promedio|ar }}%</p>
+    <p class="stat-label">Ingresos · <span data-mes-nombre></span></p>
+    <p class="stat-value" id="kpiIngresos"></p>
+    <p class="stat-delta" id="deltaIngresos"></p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Egresos · <span data-mes-nombre></span></p>
+    <p class="stat-value" id="kpiEgresos"></p>
+    <p class="stat-delta" id="deltaEgresos"></p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Saldo del mes</p>
+    <p class="stat-value" id="kpiNeto"></p>
+    <p class="stat-delta" id="deltaNeto"></p>
   </div>
 </div>
 
-<section class="chart-card" id="flujo">
-  <div class="flujo-header">
-    <div>
-      <h2>Entradas y salidas por mes</h2>
-      <p class="subtitle">Ingresos y egresos de cada mes (recurrentes + puntuales). Hacé click en una barra o elegí el mes para ver el detalle. Los meses con * son proyectados.</p>
+<section class="carrusel llenar" data-carrusel="graficos" id="flujo" aria-label="Gráficos del mes">
+  <div class="carrusel-cuerpo">
+    <div class="carrusel-slide" data-titulo="Entradas y salidas">
+      <p class="slide-meta">Hacé click en una barra para ver el detalle de ese mes.</p>
+      <div class="grafico-caja">
+        <canvas id="flujoChart" role="img" aria-label="Ingresos y egresos por mes"></canvas>
+      </div>
     </div>
-    <div class="mes-selector">
-      <button type="button" id="mesAnterior" aria-label="Mes anterior">‹</button>
-      <select id="mesSelect" aria-label="Mes">
-        {% for m in flujo_mensual %}
-          <option value="{{ loop.index0 }}" {{ "selected" if m.clave == mes_actual }}>{{ m.nombre }}{{ " *" if m.proyectado }}</option>
-        {% endfor %}
-      </select>
-      <button type="button" id="mesSiguiente" aria-label="Mes siguiente">›</button>
-    </div>
-  </div>
 
-  <div class="flujo-chart-wrap">
-    <canvas id="flujoChart" role="img" aria-label="Ingresos y egresos por mes"></canvas>
-  </div>
-
-  <div class="kpi-row flujo-kpis">
-    <div class="stat-tile">
-      <p class="stat-label">Ingresos · <span data-mes-nombre></span></p>
-      <p class="stat-value" id="kpiIngresos"></p>
-      <p class="stat-delta" id="deltaIngresos"></p>
-    </div>
-    <div class="stat-tile">
-      <p class="stat-label">Egresos · <span data-mes-nombre></span></p>
-      <p class="stat-value" id="kpiEgresos"></p>
-      <p class="stat-delta" id="deltaEgresos"></p>
-    </div>
-    <div class="stat-tile">
-      <p class="stat-label">Saldo del mes (ingresos − egresos)</p>
-      <p class="stat-value" id="kpiNeto"></p>
-      <p class="stat-delta" id="deltaNeto"></p>
-    </div>
-  </div>
-
-  <div class="two-col">
-    <div>
-      <h3>Egresos por categoría</h3>
-      <div id="categoriaWrap" class="categoria-chart-wrap">
+    <div class="carrusel-slide" data-titulo="Egresos por categoría">
+      <p class="slide-meta">Del mes elegido: <span data-mes-nombre></span></p>
+      <div id="categoriaWrap" class="grafico-caja">
         <canvas id="categoriaChart" role="img" aria-label="Egresos del mes seleccionado por categoría"></canvas>
       </div>
       <p class="vacio" id="categoriaVacio" hidden>Sin egresos este mes.</p>
     </div>
-    <div>
-      <h3>Movimientos del mes</h3>
-      <table class="tabla-movimientos">
-        <thead><tr><th>Concepto</th><th>Categoría</th><th class="num">Monto</th></tr></thead>
-        <tbody id="movimientosBody"></tbody>
-      </table>
+
+    <div class="carrusel-slide" data-titulo="Movimientos del mes">
+      <div class="table-scroll tabla-llena">
+        <table class="tabla-movimientos">
+          <thead><tr><th>Concepto</th><th>Categoría</th><th class="num">Monto</th></tr></thead>
+          <tbody id="movimientosBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Todos los meses">
+      <div class="table-scroll tabla-llena">
+        <table>
+          <thead><tr><th>Mes</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Saldo</th></tr></thead>
+          <tbody>
+            {% for m in flujo_mensual %}
+              <tr>
+                <td>{{ m.nombre }}{% if m.proyectado %} <span class="badge">proyectado</span>{% endif %}</td>
+                <td class="num">{{ m.ingresos|pesos }}</td>
+                <td class="num">{{ m.egresos|pesos }}</td>
+                <td class="num">{{ (m.ingresos - m.egresos)|pesos }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
-
-  <details>
-    <summary class="subtitle">Ver todos los meses como tabla</summary>
-    <div class="table-scroll">
-      <table>
-        <thead><tr><th>Mes</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Saldo</th></tr></thead>
-        <tbody>
-          {% for m in flujo_mensual %}
-            <tr>
-              <td>{{ m.nombre }}{% if m.proyectado %} <span class="badge">proyectado</span>{% endif %}</td>
-              <td class="num">{{ m.ingresos|pesos }}</td>
-              <td class="num">{{ m.egresos|pesos }}</td>
-              <td class="num">{{ (m.ingresos - m.egresos)|pesos }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </details>
 </section>
 
 <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
@@ -156,7 +151,7 @@
 
   const categoriaChart = new Chart(document.getElementById('categoriaChart'), {
     type: 'bar',
-    data: { labels: [], datasets: [{ label: 'Egresos', data: [], backgroundColor: colorEgresos, borderRadius: 4, borderSkipped: 'start' }] },
+    data: { labels: [], datasets: [{ label: 'Egresos', data: [], backgroundColor: colorEgresos, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 34 }] },
     options: {
       indexAxis: 'y',
       maintainAspectRatio: false,
@@ -216,7 +211,6 @@
     const hayEgresos = m.categorias.length > 0;
     document.getElementById('categoriaWrap').hidden = !hayEgresos;
     document.getElementById('categoriaVacio').hidden = hayEgresos;
-    document.getElementById('categoriaWrap').style.height = `${m.categorias.length * 30 + 40}px`;
     categoriaChart.data.labels = m.categorias.map((c) => c.nombre);
     categoriaChart.data.datasets[0].data = m.categorias.map((c) => c.monto);
     categoriaChart.resize();
