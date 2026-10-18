@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{{ saludo }}</h1>
+    <p class="subtitle">{{ fecha_larga }}</p>
+  </div>
+</header>
+
+{% include "_alertas.html" %}
+
+<section class="kpi-row" aria-label="El día en números">
+  {% for i in indicadores %}
+    {% if i.url %}<a class="stat-tile stat-tile-link" href="{{ i.url }}">{% else %}<div class="stat-tile">{% endif %}
+      <p class="stat-label">{{ i.etiqueta }}</p>
+      <p class="stat-value {{ i.clase }}">{{ i.valor }}</p>
+      {% if i.nota %}<p class="stat-note">{{ i.nota }}</p>{% endif %}
+    {% if i.url %}</a>{% else %}</div>{% endif %}
+  {% endfor %}
+</section>
+
+<div class="fila-llena llenar">
+  <section class="carrusel" data-carrusel="hoy-dia" aria-label="Tu día">
+    <div class="carrusel-cuerpo">
+      {% for p in paneles_dia %}
+        <div class="carrusel-slide" data-titulo="{{ p.titulo }}">{{ p.html }}</div>
+      {% else %}
+        <div class="carrusel-slide" data-titulo="Tu día"><p class="vacio">Nada para hacer hoy.</p></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="carrusel" data-carrusel="hoy-estado" aria-label="Cómo venís">
+    <div class="carrusel-cuerpo">
+      {% for p in paneles_estado %}
+        <div class="carrusel-slide" data-titulo="{{ p.titulo }}">{{ p.html }}</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

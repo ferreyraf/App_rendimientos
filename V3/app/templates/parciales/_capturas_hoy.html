@@ -1,0 +1,46 @@
+{# Capturas del día con su rendimiento. Usa: summary, ahora. #}
+{% if summary %}
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Hora</th>
+        <th>Billetera</th>
+        <th class="num">Capturado</th>
+        <th class="num">TNA</th>
+        <th class="num">Rendimiento</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in summary.captures %}
+      <tr class="{{ 'row-pendiente' if c.timestamp > ahora }}">
+        <td>{{ c.timestamp.strftime("%H:%M") }}{% if c.timestamp > ahora %} <span class="badge">pendiente</span>{% endif %}</td>
+        <td>{{ c.wallet_name }}</td>
+        <td class="num">{{ c.monto_capturado|pesos(0) }}</td>
+        <td class="num">{{ c.tna|ar }}%</td>
+        <td class="num">
+          {{ c.rendimiento|pesos }}
+          {% if c.dias_acumulados > 1 %}<span class="badge">×{{ c.dias_acumulados }} el próximo día hábil</span>{% endif %}
+          {% if c.limitado %}<span class="badge badge-warning">limitado por piso/techo</span>{% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5">Ninguna billetera captura hoy.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if summary.ingresos or summary.egresos %}
+  <p class="total">
+    {% for m in summary.ingresos %}<span class="badge">+{{ m.monto|pesos }} {{ m.etiqueta }}</span>{% endfor %}
+    {% for m in summary.egresos %}<span class="badge badge-warning">−{{ m.monto|pesos }} {{ m.etiqueta }}</span>{% endfor %}
+  </p>
+{% endif %}
+<p class="total">
+  Generado hoy <strong>{{ summary.rendimiento_generado|pesos }}</strong>
+  · acreditado <strong>{{ summary.rendimiento_acreditado|pesos }}</strong>
+  · cierre <strong>{{ summary.capital_cierre|pesos }}</strong>
+</p>
+{% else %}
+<p class="subtitle">Todavía no hay datos para hoy.</p>
+{% endif %}

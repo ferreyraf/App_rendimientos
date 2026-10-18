@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Gráficos</h1>
+    <p class="subtitle">Ingresos y egresos de cada mes (recurrentes + puntuales). Los meses con * son proyectados.</p>
+  </div>
+  <div class="header-acciones">
+    <span class="chip">TEA lograda por el rulo <strong class="positivo">{{ tea_rulo|ar }}%</strong></span>
+    <span class="chip" title="Promedio de la TNA nominal de las billeteras activas">TNA promedio <strong>{{ tna_promedio|ar }}%</strong></span>
+  </div>
+</header>
+
+<div class="flujo-toolbar">
+  <div class="mes-selector">
+    <button type="button" id="mesAnterior" aria-label="Mes anterior">‹</button>
+    <select id="mesSelect" aria-label="Mes">
+      {% for m in flujo_mensual %}
+        <option value="{{ loop.index0 }}" {{ "selected" if m.clave == mes_actual }}>{{ m.nombre }}{{ " *" if m.proyectado }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" id="mesSiguiente" aria-label="Mes siguiente">›</button>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Ingresos · <span data-mes-nombre></span></p>
+    <p class="stat-value" id="kpiIngresos"></p>
+    <p class="stat-delta" id="deltaIngresos"></p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Egresos · <span data-mes-nombre></span></p>
+    <p class="stat-value" id="kpiEgresos"></p>
+    <p class="stat-delta" id="deltaEgresos"></p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Saldo del mes</p>
+    <p class="stat-value" id="kpiNeto"></p>
+    <p class="stat-delta" id="deltaNeto"></p>
+  </div>
+</div>
+
+<section class="carrusel llenar" data-carrusel="graficos" id="flujo" aria-label="Gráficos del mes">
+  <div class="carrusel-cuerpo">
+    <div class="carrusel-slide" data-titulo="Entradas y salidas">
+      <p class="slide-meta">Hacé click en una barra para ver el detalle de ese mes.</p>
+      <div class="grafico-caja">
+        <canvas id="flujoChart" role="img" aria-label="Ingresos y egresos por mes"></canvas>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Egresos por categoría">
+      <p class="slide-meta">Del mes elegido: <span data-mes-nombre></span></p>
+      <div id="categoriaWrap" class="grafico-caja">
+        <canvas id="categoriaChart" role="img" aria-label="Egresos del mes seleccionado por categoría"></canvas>
+      </div>
+      <p class="vacio" id="categoriaVacio" hidden>Sin egresos este mes.</p>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Movimientos del mes">
+      <div class="table-scroll tabla-llena">
+        <table class="tabla-movimientos">
+          <thead><tr><th>Concepto</th><th>Categoría</th><th class="num">Monto</th></tr></thead>
+          <tbody id="movimientosBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Todos los meses">
+      <div class="table-scroll tabla-llena">
+        <table>
+          <thead><tr><th>Mes</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Saldo</th></tr></thead>
+          <tbody>
+            {% for m in flujo_mensual %}
+              <tr>
+                <td>{{ m.nombre }}{% if m.proyectado %} <span class="badge">proyectado</span>{% endif %}</td>
+                <td class="num">{{ m.ingresos|pesos }}</td>
+                <td class="num">{{ m.egresos|pesos }}</td>
+                <td class="num">{{ (m.ingresos - m.egresos)|pesos }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  Chart.defaults.locale = 'es-AR';
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+
+  const ink = token('--text-secondary');
+  const grid = token('--gridline');
+  const flujoMensual = {{ flujo_mensual | tojson }};
+
+  // --- Entradas y salidas por mes ---
+  const colorIngresos = token('--series-2');
+  const colorEgresos = token('--series-8');
+  const fmtAr = (v) => '$' + v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtCorto = (v) => '$' + Math.round(v).toLocaleString('es-AR');
+  const atenuar = (hex) => hex + '55';
+
+  const mesSelect = document.getElementById('mesSelect');
+  let mesSeleccionado = Number(mesSelect.value);
+
+  // El mes elegido va en color pleno y el resto atenuado; la leyenda (sin dataIndex) siempre en pleno.
+  const colorPorMes = (base) => (ctx) =>
+    (ctx.dataIndex === undefined || ctx.dataIndex === mesSeleccionado ? base : atenuar(base));
+
+  const flujoChart = new Chart(document.getElementById('flujoChart'), {
+    type: 'bar',
+    data: {
+      labels: flujoMensual.map((m) => m.corto + (m.proyectado ? '*' : '')),
+      datasets: [
+        { label: 'Ingresos', data: flujoMensual.map((m) => m.ingresos), backgroundColor: colorPorMes(colorIngresos), borderRadius: 4, borderSkipped: 'start' },
+        { label: 'Egresos', data: flujoMensual.map((m) => m.egresos), backgroundColor: colorPorMes(colorEgresos), borderRadius: 4, borderSkipped: 'start' },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      datasets: { bar: { categoryPercentage: 0.7, barPercentage: 0.9 } },
+      scales: {
+        x: { ticks: { color: ink }, grid: { display: false } },
+        y: { ticks: { color: ink, callback: fmtCorto }, grid: { color: grid }, beginAtZero: true },
+      },
+      plugins: {
+        legend: { labels: { color: ink, boxWidth: 12 } },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            title: (items) => flujoMensual[items[0].dataIndex].nombre + (flujoMensual[items[0].dataIndex].proyectado ? ' (proyectado)' : ''),
+            label: (item) => `${item.dataset.label}: ${fmtAr(item.parsed.y)}`,
+            footer: (items) => {
+              const m = flujoMensual[items[0].dataIndex];
+              return `Saldo: ${fmtAr(m.ingresos - m.egresos)}`;
+            },
+          },
+        },
+      },
+      interaction: { mode: 'index', intersect: false },
+      onClick: (_evt, elements) => {
+        if (elements.length) seleccionarMes(elements[0].index);
+      },
+      onHover: (evt, elements) => {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
+    },
+  });
+
+  const categoriaChart = new Chart(document.getElementById('categoriaChart'), {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Egresos', data: [], backgroundColor: colorEgresos, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 34 }] },
+    options: {
+      indexAxis: 'y',
+      maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: ink, callback: fmtCorto, maxTicksLimit: 5 }, grid: { color: grid }, beginAtZero: true },
+        y: { ticks: { color: ink, autoSkip: false }, grid: { display: false } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (item) => fmtAr(item.parsed.x) } },
+      },
+    },
+  });
+
+  function delta(actual, anterior, nombreAnterior) {
+    if (anterior === undefined) return '';
+    if (anterior === 0) return actual === 0 ? `Igual que ${nombreAnterior}` : `Sin movimientos en ${nombreAnterior}`;
+    const pct = ((actual - anterior) / Math.abs(anterior)) * 100;
+    const flecha = pct > 0 ? '▲' : pct < 0 ? '▼' : '=';
+    return `${flecha} ${Math.abs(pct).toLocaleString('es-AR', { maximumFractionDigits: 1 })}% vs ${nombreAnterior} (${fmtAr(anterior)})`;
+  }
+
+  function deltaAbsoluto(actual, anterior, nombreAnterior) {
+    const diff = actual - anterior;
+    const flecha = diff > 0 ? '▲' : diff < 0 ? '▼' : '=';
+    return `${flecha} ${fmtAr(Math.abs(diff))} vs ${nombreAnterior} (${fmtAr(anterior)})`;
+  }
+
+  function escapar(texto) {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  function seleccionarMes(idx) {
+    mesSeleccionado = Math.max(0, Math.min(flujoMensual.length - 1, idx));
+    mesSelect.value = String(mesSeleccionado);
+    document.getElementById('mesAnterior').disabled = mesSeleccionado === 0;
+    document.getElementById('mesSiguiente').disabled = mesSeleccionado === flujoMensual.length - 1;
+
+    const m = flujoMensual[mesSeleccionado];
+    const prev = flujoMensual[mesSeleccionado - 1];
+    const neto = m.ingresos - m.egresos;
+
+    document.querySelectorAll('[data-mes-nombre]').forEach((el) => {
+      el.textContent = m.nombre + (m.proyectado ? ' (proyectado)' : '');
+    });
+    document.getElementById('kpiIngresos').textContent = fmtAr(m.ingresos);
+    document.getElementById('kpiEgresos').textContent = fmtAr(m.egresos);
+    const kpiNeto = document.getElementById('kpiNeto');
+    kpiNeto.textContent = fmtAr(neto);
+    kpiNeto.className = 'stat-value ' + (neto >= 0 ? 'positivo' : 'negativo');
+    document.getElementById('deltaIngresos').textContent = prev ? delta(m.ingresos, prev.ingresos, prev.nombre) : '';
+    document.getElementById('deltaEgresos').textContent = prev ? delta(m.egresos, prev.egresos, prev.nombre) : '';
+    document.getElementById('deltaNeto').textContent = prev ? deltaAbsoluto(neto, prev.ingresos - prev.egresos, prev.nombre) : '';
+
+    const hayEgresos = m.categorias.length > 0;
+    document.getElementById('categoriaWrap').hidden = !hayEgresos;
+    document.getElementById('categoriaVacio').hidden = hayEgresos;
+    categoriaChart.data.labels = m.categorias.map((c) => c.nombre);
+    categoriaChart.data.datasets[0].data = m.categorias.map((c) => c.monto);
+    categoriaChart.resize();
+    categoriaChart.update();
+
+    const filas = [
+      ...m.detalle_ingresos.map((x) => `<tr><td><span class="dot" style="background:${colorIngresos}"></span>${escapar(x.etiqueta)}</td><td>Ingreso</td><td class="num">+${fmtAr(x.monto)}</td></tr>`),
+      ...m.detalle_egresos
+        .slice()
+        .sort((a, b) => b.monto - a.monto)
+        .map((x) => `<tr><td><span class="dot" style="background:${colorEgresos}"></span>${escapar(x.etiqueta)}</td><td>${escapar(x.categoria)}</td><td class="num">−${fmtAr(x.monto)}</td></tr>`),
+    ];
+    document.getElementById('movimientosBody').innerHTML =
+      filas.join('') || '<tr><td colspan="3" class="vacio">Sin movimientos este mes.</td></tr>';
+
+    flujoChart.update();
+  }
+
+  mesSelect.addEventListener('change', () => seleccionarMes(Number(mesSelect.value)));
+  document.getElementById('mesAnterior').addEventListener('click', () => seleccionarMes(mesSeleccionado - 1));
+  document.getElementById('mesSiguiente').addEventListener('click', () => seleccionarMes(mesSeleccionado + 1));
+  seleccionarMes(mesSeleccionado);
+</script>
+{% endblock %}

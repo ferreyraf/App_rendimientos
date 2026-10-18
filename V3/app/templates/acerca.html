@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="chart-card acerca-hero">
+  <img src="{{ url_for('static', filename='icono.png') }}" alt="" width="64" height="64">
+  <div>
+    <h1>{{ nombre }}</h1>
+    <p class="acerca-version">Versión {{ version }}{% if not instalada %} · modo desarrollo{% endif %}</p>
+    <p class="subtitle">{{ descripcion }}</p>
+  </div>
+</section>
+
+<div class="two-col">
+  <section class="chart-card">
+    <h2>Tus datos</h2>
+    <p class="subtitle">Todo se guarda en esta computadora. Desinstalar o actualizar la app no borra esta carpeta.</p>
+    <table class="tabla-acerca">
+      <tbody>
+        <tr><th>Carpeta de datos</th><td><code>{{ carpeta_datos }}</code></td></tr>
+        <tr><th>Base de datos</th><td><code>{{ base.name }}</code> · {{ tamano_db_kb|ar(0) }} KB</td></tr>
+        <tr><th>Backups automáticos</th><td><code>{{ carpeta_backups }}</code></td></tr>
+        <tr><th>Registro (logs)</th><td><code>{{ carpeta_logs }}</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="chart-card">
+    <h2>Información</h2>
+    <table class="tabla-acerca">
+      <tbody>
+        <tr><th>Versión</th><td>{{ version }}</td></tr>
+        <tr><th>Autor</th><td>{{ autor }}</td></tr>
+        <tr><th>Sistema</th><td>{{ sistema }}</td></tr>
+        <tr><th>Python</th><td>{{ python }}</td></tr>
+        <tr>
+          <th>Dólar</th>
+          <td>
+            {% if cotizacion_usd %}{{ cotizacion_usd.valor|pesos }} · consultado {{ cotizacion_usd.actualizado.strftime("%d/%m/%Y %H:%M") }}{% else %}Sin consultar todavía{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <h3 class="acerca-fuentes">Fuentes de datos</h3>
+    <ul class="acerca-lista">
+      <li>Inflación (IPC): INDEC, vía argentinadatos.com.ar</li>
+      <li>Dólar: Dólar Blue en Córdoba, infodolar.com (venta)</li>
+    </ul>
+  </section>
+</div>
+{% endblock %}

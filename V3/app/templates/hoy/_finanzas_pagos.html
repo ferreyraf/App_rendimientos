@@ -1,0 +1,28 @@
+{# Pagos y cobros de hoy, más los atrasados del mes sin marcar. Se marcan
+   acá mismo (vuelve a Hoy) igual que en "Este mes". #}
+{% for f in filas %}
+  <div class="fila-pago {{ 'fila-pago-hecha' if f.real is not none }} {{ 'fila-pago-vencida' if f.vencido }}">
+    <span class="fila-pago-fecha">{{ "Hoy" if f.fecha == hoy else f.fecha.strftime("%d/%m") }}</span>
+    <span class="fila-config-principal">
+      <strong>{{ f.etiqueta }}</strong>
+      <span class="fila-config-detalle">{{ "Ingreso" if f.tipo == "ingreso" else (f.categoria or "Sin categoría") }}{% if f.vencido %} · <span class="negativo">atrasado</span>{% endif %}</span>
+    </span>
+    {% if f.real is not none %}
+      <span class="estado-hecho">✓ {{ "Cobrado" if f.tipo == "ingreso" else "Pagado" }} {{ f.real|pesos(0) }}</span>
+    {% else %}
+      <form method="post" action="{{ url_for('main.registrar_pago') }}" class="fila-pago-form">
+        <input type="hidden" name="tipo" value="{{ f.tipo }}">
+        <input type="hidden" name="id" value="{{ f.id }}">
+        <input type="hidden" name="fecha" value="{{ f.fecha.isoformat() }}">
+        <input type="hidden" name="clave" value="{{ f.clave }}">
+        <input type="hidden" name="mes" value="{{ mes_param }}">
+        <input type="hidden" name="volver" value="{{ volver }}">
+        <label class="visualmente-oculto" for="hoy-monto-{{ loop.index }}">Monto real de {{ f.etiqueta }}</label>
+        <span class="campo-pesos"><span aria-hidden="true">$</span><input id="hoy-monto-{{ loop.index }}" type="number" name="monto" step="0.01" min="0" value="{{ '%.2f'|format(f.estimado) }}" required></span>
+        <button type="submit">{{ "Cobrado" if f.tipo == "ingreso" else "Pagado" }}</button>
+      </form>
+    {% endif %}
+  </div>
+{% else %}
+  <p class="vacio lista-vacia">No hay pagos ni cobros para hoy. <a href="{{ url_for('main.este_mes') }}">Ver el mes</a></p>
+{% endfor %}

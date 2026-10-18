@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Historial</h1>
+    <p class="subtitle">Cómo evolucionó el rulo día a día · <a href="{{ url_for('main.exportar_historial') }}">Exportar a CSV</a></p>
+  </div>
+</header>
+
+<section class="carrusel llenar" data-carrusel="historial" aria-label="Historial">
+  <div class="carrusel-cuerpo">
+    {% if capital_series|length > 1 %}
+    <div class="carrusel-slide" data-titulo="Evolución del capital">
+      <div class="grafico-caja">
+        <canvas id="historialChart" role="img" aria-label="Evolución del capital de cierre día a día"></canvas>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="carrusel-slide" data-titulo="Detalle por día">
+      <div class="lista-dias">
+{% for s in summaries %}
+<details class="day-card" {{ "open" if loop.first }}>
+  <summary class="day-summary">
+    <span class="day-summary-date">
+      {{ s.date.strftime("%d/%m/%Y") }}
+      {% if s.aporte_recibido > 0 %}<span class="badge">+{{ s.aporte_recibido|pesos }} aporte</span>{% endif %}
+      {% for m in s.ingresos %}<span class="badge">+{{ m.monto|pesos }} {{ m.etiqueta }}</span>{% endfor %}
+      {% for m in s.egresos %}<span class="badge badge-warning">-{{ m.monto|pesos }} {{ m.etiqueta }}</span>{% endfor %}
+    </span>
+    <span class="day-summary-figures">
+      Rendimiento {{ s.rendimiento_generado|pesos }} · Capital <strong>{{ s.capital_cierre|pesos }}</strong>
+    </span>
+  </summary>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Hora</th>
+        <th>Billetera</th>
+        <th>Monto capturado</th>
+        <th>Rendimiento</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in s.captures %}
+      <tr>
+        <td>{{ c.timestamp.strftime("%H:%M") }}</td>
+        <td>{{ c.wallet_name }}</td>
+        <td>{{ c.monto_capturado|pesos }}</td>
+        <td>
+          {{ c.rendimiento|pesos }}
+          {% if c.dias_acumulados > 1 %}<span class="badge">×{{ c.dias_acumulados }} días</span>{% endif %}
+          {% if c.limitado %}<span class="badge badge-warning">limitado</span>{% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4">Sin capturas.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="total">
+    Rendimiento generado: {{ s.rendimiento_generado|pesos }} ·
+    Acreditado: {{ s.rendimiento_acreditado|pesos }} ·
+    Capital de cierre: <strong>{{ s.capital_cierre|pesos }}</strong>
+  </p>
+</details>
+{% else %}
+<p class="subtitle">Todavía no hay historial.</p>
+{% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if capital_series|length > 1 %}
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+
+  const capitalSeries = {{ capital_series | tojson }};
+
+  new Chart(document.getElementById('historialChart'), {
+    type: 'line',
+    data: {
+      labels: capitalSeries.map(p => p.date),
+      datasets: [{
+        label: 'Capital de cierre',
+        data: capitalSeries.map(p => p.capital_cierre),
+        borderColor: token('--series-1'),
+        backgroundColor: token('--series-1'),
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.15,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: token('--text-secondary'), maxTicksLimit: 10 }, grid: { color: token('--gridline') } },
+        y: { ticks: { color: token('--text-secondary') }, grid: { color: token('--gridline') } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      interaction: { mode: 'index', intersect: false },
+    },
+  });
+</script>
+{% endif %}
+{% endblock %}

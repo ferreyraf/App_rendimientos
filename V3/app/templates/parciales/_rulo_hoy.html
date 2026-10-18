@@ -1,0 +1,13 @@
+{# Dónde está la plata y qué sigue. Usa: actual, proxima, hoy, vencimiento, dias_para_vencimiento, summary. #}
+<dl class="lista-datos">
+  {% if actual %}
+    <div><dt>Tu plata está en</dt><dd><strong>{{ actual.wallet_name }}</strong> desde las {{ actual.timestamp.strftime("%H:%M") }}{% if actual.timestamp.date() != hoy %} del {{ actual.timestamp.strftime("%d/%m") }}{% endif %}</dd></div>
+  {% endif %}
+  {% if proxima %}
+    <div><dt>Próxima acción</dt><dd>Mover a <strong>{{ proxima.wallet_name }}</strong> a las {{ proxima.timestamp.strftime("%H:%M") }}{% if proxima.timestamp.date() != hoy %} ({{ proxima.timestamp.strftime("%d/%m") }}){% endif %} · en {{ proxima.horas }}h {{ proxima.minutos }}min</dd></div>
+  {% endif %}
+  <div><dt>Vencimiento de impuestos</dt><dd>{{ vencimiento.strftime("%d/%m/%Y") }} · faltan {{ dias_para_vencimiento }} día{{ 's' if dias_para_vencimiento != 1 }}</dd></div>
+  {% if summary %}
+    <div><dt>Generado hoy</dt><dd><strong>{{ summary.rendimiento_generado|pesos }}</strong></dd></div>
+  {% endif %}
+</dl>

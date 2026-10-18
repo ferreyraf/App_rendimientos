@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Proyección a futuro</h1>
+    <p class="subtitle">Capital del rulo a una fecha futura, si las tasas y horarios actuales se mantienen</p>
+  </div>
+</header>
+
+<form method="post" class="barra-herramientas">
+  <div class="campo">
+    <label for="fecha_objetivo">Fecha objetivo</label>
+    <input type="date" id="fecha_objetivo" name="fecha_objetivo" value="{{ fecha_objetivo.isoformat() }}" required>
+  </div>
+  <div id="aportesFuturosContainer" class="aportes-futuros">
+    {% for fecha, monto in aportes_planeados %}
+    <div class="aporte-futuro-row">
+      <input type="date" name="aporte_futuro_fecha" value="{{ fecha.isoformat() }}" aria-label="Fecha del aporte planeado">
+      <input type="number" step="0.01" min="0.01" name="aporte_futuro_monto" value="{{ monto }}" placeholder="Monto" aria-label="Monto del aporte planeado">
+      <button type="button" class="btn-icono" onclick="this.parentElement.remove()" aria-label="Quitar aporte planeado">×</button>
+    </div>
+    {% endfor %}
+  </div>
+  <button type="button" class="btn-secondary" id="agregarAporteFuturo" title="Solo se usan para este cálculo, no se guardan">+ Aporte planeado</button>
+  <button type="submit">Proyectar</button>
+</form>
+
+<template id="aporteFuturoTemplate">
+  <div class="aporte-futuro-row">
+    <input type="date" name="aporte_futuro_fecha" aria-label="Fecha del aporte planeado">
+    <input type="number" step="0.01" min="0.01" name="aporte_futuro_monto" placeholder="Monto" aria-label="Monto del aporte planeado">
+    <button type="button" class="btn-icono" onclick="this.parentElement.remove()" aria-label="Quitar aporte planeado">×</button>
+  </div>
+</template>
+
+<script>
+  document.getElementById('agregarAporteFuturo').addEventListener('click', () => {
+    const tpl = document.getElementById('aporteFuturoTemplate');
+    document.getElementById('aportesFuturosContainer').appendChild(tpl.content.cloneNode(true));
+  });
+</script>
+
+{% include "_alertas.html" %}
+
+<div class="kpi-row">
+  <div class="stat-tile">
+    <p class="stat-label">Capital hoy ({{ hoy.strftime("%d/%m") }})</p>
+    <p class="stat-value">{{ capital_hoy|pesos }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Proyectado al {{ fecha_objetivo.strftime("%d/%m/%Y") }}</p>
+    <p class="stat-value">{{ capital_final|pesos }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Ganancia en el período</p>
+    <p class="stat-value {{ 'positivo' if rendimiento_proyectado >= 0 else 'negativo' }}">{{ rendimiento_proyectado|pesos }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Lo que suma el rulo vs. sin rulo</p>
+    <p class="stat-value {{ 'positivo' if aporte_del_rulo >= 0 else 'negativo' }}">{{ aporte_del_rulo|pesos }}</p>
+  </div>
+</div>
+
+<section class="carrusel llenar" data-carrusel="proyeccion" aria-label="Proyección">
+  <div class="carrusel-cuerpo">
+    <div class="carrusel-slide" data-titulo="Evolución del capital">
+      <p class="slide-meta">Línea llena: real hasta hoy · punteada: proyectado · naranja: la misma plata sin ningún interés. La distancia entre las líneas es lo que aporta el rulo.</p>
+      <div class="grafico-caja">
+        <canvas id="proyeccionChart" role="img" aria-label="Capital real hasta hoy y proyectado hacia la fecha objetivo"></canvas>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Ganancia por tramo">
+      <p class="slide-meta">Cuánto ganás acumulado desde hoy hasta cada tramo, camino a la fecha objetivo</p>
+      <div class="grafico-caja">
+        <canvas id="gananciaChart" role="img" aria-label="Ganancia acumulada en pesos por tramo, desde hoy hasta la fecha objetivo"></canvas>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Rulo vs. quieto">
+      <dl class="lista-datos">
+        <div><dt>Con rulo al {{ fecha_objetivo.strftime("%d/%m/%Y") }}</dt><dd><strong>{{ capital_final|pesos }}</strong></dd></div>
+        <div><dt>Sin rulo (la misma plata, sin intereses)</dt><dd class="{{ 'negativo' if capital_sin_rulo_final < 0 }}">{{ capital_sin_rulo_final|pesos }}</dd></div>
+        <div><dt>Todo quieto en la mejor billetera ({{ mejor_tna|ar }}% TNA)</dt><dd>{{ capital_quieto|pesos }}</dd></div>
+        <div><dt>Ventaja de rotar vs. quieto</dt><dd class="{{ 'positivo' if ventaja_rulo_proyectada >= 0 else 'negativo' }}"><strong>{{ ventaja_rulo_proyectada|pesos }}</strong></dd></div>
+      </dl>
+      <p class="subtitle">El capital "quieto" descuenta los mismos gastos e ingresos reales que el rulo; solo cambia la estrategia (una billetera fija en vez de rotar).</p>
+      {% if aportes_planeados %}
+      <p class="subtitle">
+        Incluye {{ aportes_planeados|length }} aporte(s) planeado(s):
+        {% for fecha, monto in aportes_planeados %}{{ monto|pesos }} el {{ fecha.strftime("%d/%m/%Y") }}{{ ", " if not loop.last }}{% endfor %}
+      </p>
+      {% endif %}
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Detalle diario">
+      <div class="table-scroll tabla-llena">
+        <table>
+          <thead><tr><th>Fecha</th><th class="num">Capital de cierre</th><th class="num">Sin rulo</th><th class="num">Diferencia</th><th></th></tr></thead>
+          <tbody>
+            {% for point in capital_series %}
+              <tr>
+                <td>{{ point.date }}</td>
+                <td class="num">{{ point.capital_cierre|pesos }}</td>
+                <td class="num">{{ point.sin_rulo|pesos }}</td>
+                <td class="num">{{ (point.capital_cierre - point.sin_rulo)|pesos }}</td>
+                <td>{% if point.futuro %}<span class="badge">proyectado</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Detalle por tramo">
+      <div class="table-scroll tabla-llena">
+        <table>
+          <thead><tr><th>Fecha</th><th class="num">Ganancia del tramo</th><th class="num">Ganancia acumulada</th></tr></thead>
+          <tbody>
+            {% for point in ganancia_periodica %}
+              <tr>
+                <td>{{ point.date }}</td>
+                <td class="num">{{ point.ganancia_periodo|pesos }}</td>
+                <td class="num">{{ point.ganancia_acumulada|pesos }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name) => styles.getPropertyValue(name).trim();
+
+  const ink = token('--text-secondary');
+  const grid = token('--gridline');
+  const seriesBlue = token('--series-1');
+  const seriesSinRulo = token('--series-6');
+
+  const capitalSeries = {{ capital_series | tojson }};
+  const labels = capitalSeries.map(p => p.date);
+
+  // Serie "real": valores hasta hoy, null después (para que la línea corte ahí).
+  // Serie "proyectado": null hasta hoy, valores desde ahí (con el punto de hoy
+  // repetido para que ambas líneas conecten visualmente).
+  const real = [];
+  const proyectado = [];
+  capitalSeries.forEach((p, i) => {
+    if (!p.futuro) {
+      real.push(p.capital_cierre);
+      proyectado.push(i === capitalSeries.length - 1 || capitalSeries[i + 1].futuro ? p.capital_cierre : null);
+    } else {
+      real.push(null);
+      proyectado.push(p.capital_cierre);
+    }
+  });
+
+  new Chart(document.getElementById('proyeccionChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Capital real',
+          data: real,
+          borderColor: seriesBlue,
+          backgroundColor: seriesBlue,
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.15,
+        },
+        {
+          label: 'Capital proyectado (con rulo)',
+          data: proyectado,
+          borderColor: seriesBlue,
+          backgroundColor: seriesBlue,
+          borderWidth: 2,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          tension: 0.15,
+        },
+        {
+          label: 'Sin rulo (sin intereses)',
+          data: capitalSeries.map(p => p.sin_rulo),
+          borderColor: seriesSinRulo,
+          backgroundColor: seriesSinRulo,
+          borderWidth: 2,
+          pointRadius: 0,
+          stepped: true,
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: ink, maxTicksLimit: 10 }, grid: { color: grid } },
+        y: { ticks: { color: ink, callback: (v) => '$' + Math.round(v).toLocaleString('es-AR') }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { labels: { color: ink } },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            label: (ctx) => ctx.parsed.y === null ? null
+              : `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          },
+        },
+      },
+      interaction: { mode: 'index', intersect: false },
+    },
+  });
+
+  const gananciaPeriodica = {{ ganancia_periodica | tojson }};
+  const fmtMoney = (v) => '$' + Math.round(v).toLocaleString('es-AR');
+  const success = token('--success-text');
+  const critical = token('--status-critical');
+
+  // Dibuja el valor en pesos arriba (o abajo, si es negativo) de cada barra,
+  // para que la ganancia numérica se lea sin pasar el mouse.
+  const valueLabels = {
+    id: 'valueLabels',
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      const meta = chart.getDatasetMeta(0);
+      ctx.save();
+      ctx.fillStyle = ink;
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      meta.data.forEach((bar, i) => {
+        const value = gananciaPeriodica[i].ganancia_acumulada;
+        const y = value >= 0 ? bar.y - 6 : bar.y + 14;
+        ctx.fillText(fmtMoney(value), bar.x, y);
+      });
+      ctx.restore();
+    },
+  };
+
+  new Chart(document.getElementById('gananciaChart'), {
+    type: 'bar',
+    data: {
+      labels: gananciaPeriodica.map(p => p.date),
+      datasets: [{
+        label: 'Ganancia acumulada',
+        data: gananciaPeriodica.map(p => p.ganancia_acumulada),
+        backgroundColor: gananciaPeriodica.map(p => p.ganancia_acumulada >= 0 ? success : critical),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      layout: { padding: { top: 20 } },
+      scales: {
+        x: { ticks: { color: ink }, grid: { display: false } },
+        y: { ticks: { color: ink }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const p = gananciaPeriodica[ctx.dataIndex];
+              return [`Acumulada: ${fmtMoney(p.ganancia_acumulada)}`, `Este tramo: ${fmtMoney(p.ganancia_periodo)}`];
+            },
+          },
+        },
+      },
+    },
+    plugins: [valueLabels],
+  });
+</script>
+{% endblock %}

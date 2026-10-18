@@ -1,0 +1,15 @@
+#!/bin/sh
+# Punto de entrada del AppImage de @APP_NAME@ @VERSION@.
+#   ./RuloFinanciero.AppImage                 abre la app
+#   ./RuloFinanciero.AppImage --instalar      la instala para este usuario
+#   ./RuloFinanciero.AppImage --desinstalar   la desinstala (agregá --borrar-datos para borrar también tus datos)
+#   ./RuloFinanciero.AppImage --version
+HERE="$(dirname "$(readlink -f "$0")")"
+
+case "$1" in
+  --instalar) exec "$HERE/instalar.sh" ;;
+  --desinstalar) shift; exec "$HERE/desinstalar.sh" "$@" ;;
+  --version) echo "@APP_NAME@ @VERSION@"; exit 0 ;;
+esac
+
+exec "$HERE/usr/lib/@APP_ID@/@APP_ID@" "$@"

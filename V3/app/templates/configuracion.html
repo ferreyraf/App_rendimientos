@@ -1,0 +1,551 @@
+{% extends "base.html" %}
+
+{% macro cuando(m) -%}
+  {%- if m.recurrente -%}
+    {{ (m.dia_mes ~ "º día hábil") if m.dia_habil else ("día " ~ m.dia_mes) }}{% if m.fecha %} · desde {{ m.fecha.strftime("%d/%m/%Y") }}{% endif %}{% if m.hasta %} · hasta {{ m.hasta.strftime("%d/%m/%Y") }}{% endif %}
+  {%- else -%}
+    {{ m.fecha.strftime("%d/%m/%Y") }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro resumen_aumento(m) -%}
+  {%- if not m.recurrente -%}
+  {%- elif m.aguinaldo -%}
+    Con aguinaldo
+  {%- elif m.ajustes -%}
+    {{ m.ajustes|length }} ajuste{{ 's' if m.ajustes|length != 1 }} cargado{{ 's' if m.ajustes|length != 1 }}
+  {%- elif m.aumento_pct and m.aumento_inicio -%}
+    +{{ m.aumento_pct|ar(0) if m.aumento_pct == m.aumento_pct|int else m.aumento_pct|ar }}% {{ 'por mes' if m.aumento_periodo_meses == 1 else 'cada ' ~ m.aumento_periodo_meses ~ ' meses' }}
+  {%- else -%}
+    Sin aumento
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro fila(tipo, id, m, con_categoria) %}
+  <button type="button" class="fila-config" data-mov='{{ datos[tipo][id]|tojson }}' data-categoria="{{ m.categoria }}">
+    <span class="fila-config-principal">
+      <strong>{{ m.etiqueta }}{% if m.moneda == "USD" %} <span class="badge">US{{ m.monto|pesos(0) }}</span>{% endif %}</strong>
+      <span class="fila-config-detalle">{% if con_categoria %}{{ m.categoria or "Sin categoría" }} · {% endif %}{{ cuando(m) }}{% if m.moneda == "USD" and m.cotizacion %} · blue Cba {{ m.cotizacion|pesos(0) }}{% endif %}</span>
+    </span>
+    <span class="fila-config-aumento">{{ resumen_aumento(m) }}</span>
+    <span class="fila-config-monto">{% if m.moneda == "USD" and not m.cotizacion %}sin cotización{% else %}{{ m.monto_en_pesos|pesos(0) }}{% endif %}</span>
+  </button>
+{% endmacro %}
+
+{% macro tab_movimientos(tipo, grupos, con_categoria, singular, plural) %}
+  <div class="config-toolbar">
+    {% if con_categoria %}
+      <div class="filtros" role="group" aria-label="Filtrar por categoría">
+        <button type="button" class="filtro" aria-pressed="true" data-filtro="">Todos</button>
+        {% for cat in categorias_existentes %}
+          <button type="button" class="filtro" aria-pressed="false" data-filtro="{{ cat }}">{{ cat }} · {{ conteo_categorias[cat] }}</button>
+        {% endfor %}
+      </div>
+    {% else %}
+      <span></span>
+    {% endif %}
+    <button type="button" class="btn-primary" data-nuevo="{{ tipo }}">+ Agregar {{ singular }}</button>
+  </div>
+
+  <div class="config-split">
+    <section class="config-lista carrusel" data-carrusel="{{ tipo }}-meses" aria-label="{{ plural|capitalize }}">
+      <div class="carrusel-cuerpo">
+        <div class="carrusel-slide" data-titulo="Todos los meses">
+          <p class="slide-meta">Se repiten todos los meses · hoy <strong>{{ grupos.total_recurrentes|pesos(0) }}</strong> / mes</p>
+          {% for id, m in grupos.recurrentes %}
+            {{ fila(tipo, id, m, con_categoria) }}
+          {% else %}
+            <p class="vacio lista-vacia">No hay {{ plural }} que se repitan todos los meses.</p>
+          {% endfor %}
+        </div>
+
+        {% for mes in grupos.meses %}
+          <div class="carrusel-slide" data-titulo="{{ mes.nombre }}">
+            <p class="slide-meta">
+              {{ mes.movimientos|length }} puntual{{ 'es' if mes.movimientos|length != 1 }}
+              {% if mes.actual %}<span class="badge badge-actual">mes actual</span>{% endif %}
+              · total del mes (con recurrentes) <strong>{{ mes.total_mes|pesos(0) }}</strong>
+            </p>
+            {% for id, m in mes.movimientos %}
+              {{ fila(tipo, id, m, con_categoria) }}
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <aside class="panel-edicion" id="panel-{{ tipo }}" aria-labelledby="panel-{{ tipo }}-titulo"
+           data-url-agregar="{{ url_for('main.agregar_' ~ tipo) }}" data-singular="{{ singular }}"
+           data-cotizacion="{{ cotizacion_usd.valor if cotizacion_usd else '' }}">
+      <div class="panel-cabecera">
+        <div>
+          <span class="panel-modo" data-panel-modo>Nuevo {{ singular }}</span>
+          <h2 id="panel-{{ tipo }}-titulo" data-panel-titulo>Agregar {{ singular }}</h2>
+        </div>
+        <button type="button" class="btn-icono" data-panel-cerrar aria-label="Cerrar y volver a agregar" hidden>×</button>
+      </div>
+
+      <form method="post" action="{{ url_for('main.agregar_' ~ tipo) }}" class="panel-form">
+        <div class="campo">
+          <label for="{{ tipo }}-etiqueta">Concepto</label>
+          <input id="{{ tipo }}-etiqueta" type="text" name="etiqueta" required placeholder="{{ 'Ej. Alquiler, Tarjeta' if con_categoria else 'Ej. Sueldo, Freelance' }}">
+        </div>
+
+        {% if con_categoria %}
+          <div class="campo">
+            <label for="{{ tipo }}-categoria">Categoría</label>
+            <select id="{{ tipo }}-categoria" name="categoria">
+              <option value="">Sin categoría</option>
+              {% for cat in categorias_existentes %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+            </select>
+          </div>
+        {% endif %}
+
+        <div class="campo">
+          <label for="{{ tipo }}-monto">Monto</label>
+          <div class="campo-monto-panel">
+            <div class="segmentado" role="radiogroup" aria-label="Moneda">
+              <label><input type="radio" name="moneda" value="ARS" checked><span>$</span></label>
+              <label><input type="radio" name="moneda" value="USD"><span>US$</span></label>
+            </div>
+            <input id="{{ tipo }}-monto" type="number" name="monto" step="0.01" min="0.01" required>
+          </div>
+          <span class="campo-ayuda" data-equivalente hidden></span>
+        </div>
+
+        <div class="panel-grupo">
+          <label class="check"><input type="checkbox" name="recurrente" data-recurrente> Se repite todos los meses</label>
+          <div class="campo" data-solo-puntual>
+            <label for="{{ tipo }}-fecha">Fecha</label>
+            <input id="{{ tipo }}-fecha" type="date" name="fecha">
+          </div>
+          <div class="campos-dobles" data-solo-recurrente hidden>
+            <div class="campo">
+              <label for="{{ tipo }}-dia">Día del mes</label>
+              <input id="{{ tipo }}-dia" type="number" name="dia_mes" min="1" max="31">
+            </div>
+            <div class="campo">
+              <label for="{{ tipo }}-desde">Desde (opcional)</label>
+              <input id="{{ tipo }}-desde" type="date" name="desde">
+            </div>
+          </div>
+          <label class="check" data-solo-recurrente hidden><input type="checkbox" name="dia_habil"> Contar días hábiles</label>
+          <div class="campos-dobles" data-solo-recurrente hidden>
+            <div class="campo">
+              <label for="{{ tipo }}-hasta">Hasta (opcional)</label>
+              <input id="{{ tipo }}-hasta" type="date" name="hasta" data-hasta>
+            </div>
+            <div class="campo">
+              <label for="{{ tipo }}-cuotas">o cantidad de cuotas</label>
+              <input id="{{ tipo }}-cuotas" type="number" min="1" max="600" placeholder="Ej. 3" data-cuotas>
+            </div>
+          </div>
+          {% if tipo == "ingreso" %}
+            <div class="campo" data-solo-recurrente hidden>
+              <label for="ingreso-aguinaldo">Aguinaldo automático</label>
+              <select id="ingreso-aguinaldo" name="aguinaldo">
+                <option value="0">No</option>
+                <option value="1">Sí, el 30/06 y el 18/12</option>
+                <option value="2">Sí, con el sueldo de julio y enero</option>
+              </select>
+              <span class="campo-ayuda">50% del mayor sueldo del semestre.</span>
+            </div>
+          {% endif %}
+        </div>
+
+        <fieldset class="panel-grupo" data-solo-recurrente hidden>
+          <legend>Aumento periódico (opcional)</legend>
+          <div class="campos-triples">
+            <div class="campo">
+              <label for="{{ tipo }}-aumento">%</label>
+              <input id="{{ tipo }}-aumento" type="number" name="aumento_pct" step="0.01" min="0" placeholder="0">
+            </div>
+            <div class="campo">
+              <label for="{{ tipo }}-periodo">Cada (meses)</label>
+              <input id="{{ tipo }}-periodo" type="number" name="aumento_periodo_meses" min="1" value="4">
+            </div>
+            <div class="campo">
+              <label for="{{ tipo }}-inicio">Desde</label>
+              <input id="{{ tipo }}-inicio" type="date" name="aumento_inicio">
+            </div>
+          </div>
+          <div class="panel-ajustes" data-ajustes hidden>
+            <span class="campo-ayuda">Ajustes reales cargados</span>
+            <div class="panel-ajustes-lista" data-ajustes-lista></div>
+            <a href="#ajustes" data-ir-ajustes>Ver calendario de ajustes</a>
+          </div>
+        </fieldset>
+
+        <div class="panel-acciones">
+          <button type="submit" class="btn-primary" data-guardar>Agregar</button>
+          <button type="button" class="btn-secondary" data-panel-cerrar hidden>Cancelar</button>
+          <button type="submit" class="btn-texto-peligro" data-eliminar formnovalidate hidden>Eliminar</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+{% endmacro %}
+
+{% block content %}
+<header class="page-header">
+  <h1>Configuración</h1>
+</header>
+
+<div class="tabs" role="tablist" aria-label="Qué configurar" data-tab-inicial="{{ 'gastos' if aportes else 'aportes' }}">
+  <button type="button" role="tab" id="tab-aportes" aria-controls="panel-tab-aportes" data-tab="aportes">Aportes</button>
+  <button type="button" role="tab" id="tab-gastos" aria-controls="panel-tab-gastos" data-tab="gastos">Gastos <span class="badge">{{ datos.egreso|length }}</span></button>
+  <button type="button" role="tab" id="tab-ingresos" aria-controls="panel-tab-ingresos" data-tab="ingresos">Ingresos <span class="badge">{{ datos.ingreso|length }}</span></button>
+  <button type="button" role="tab" id="tab-ajustes" aria-controls="panel-tab-ajustes" data-tab="ajustes">Ajustes por inflación</button>
+  <button type="button" role="tab" id="tab-billeteras" aria-controls="panel-tab-billeteras" data-tab="billeteras">Billeteras</button>
+  <button type="button" role="tab" id="tab-dolar" aria-controls="panel-tab-dolar" data-tab="dolar">Dólar</button>
+  <button type="button" role="tab" id="tab-avisos" aria-controls="panel-tab-avisos" data-tab="avisos">Avisos</button>
+  <button type="button" role="tab" id="tab-respaldo" aria-controls="panel-tab-respaldo" data-tab="respaldo">Respaldo</button>
+</div>
+
+<section class="panel-pestana" role="tabpanel" id="panel-tab-aportes" aria-labelledby="tab-aportes" hidden>
+  <p class="subtitle">Capital que pusiste en el rulo. El primer aporte marca el arranque de la simulación.</p>
+  <div class="config-split">
+    <section class="config-lista carrusel" data-carrusel="aportes" aria-label="Aportes y controles de saldo">
+      <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="Aportes">
+        <p class="slide-meta">Total <strong>{{ total_aportes|pesos(0) }}</strong></p>
+        {% for id, fecha, monto in aportes %}
+          <button type="button" class="fila-config" data-aporte='{{ {"fecha": fecha.isoformat(), "monto": monto, "url_editar": url_for("main.editar_aporte", aporte_id=id), "url_eliminar": url_for("main.eliminar_aporte", aporte_id=id)}|tojson }}'>
+            <span class="fila-config-principal"><strong>Aporte</strong><span class="fila-config-detalle">{{ fecha.strftime("%d/%m/%Y") }}</span></span>
+            <span class="fila-config-monto">{{ monto|pesos(0) }}</span>
+          </button>
+        {% else %}
+          <p class="vacio lista-vacia">Todavía no cargaste ningún aporte. Empezá por acá: es la plata con la que arranca el rulo.</p>
+        {% endfor %}
+      </div>
+
+      <div class="carrusel-slide" data-titulo="Controles de saldo real">
+        <p class="slide-meta">La simulación se ajusta a cada uno</p>
+        {% for c in controles|reverse %}
+          <div class="fila-pago">
+            <span class="fila-pago-fecha">{{ c.fecha.strftime("%d/%m") }}</span>
+            <span class="fila-config-principal">
+              <strong>Saldo real {{ c.real|pesos(0) }}</strong>
+              <span class="fila-config-detalle">
+                {% if c.simulado is none %}Anterior al inicio del rulo: no se usa
+                {% elif c.diferencia|abs < 1 %}Coincidía con la simulación
+                {% else %}La simulación daba {{ c.simulado|pesos(0) }}: {{ c.diferencia|abs|pesos(0) }} {{ 'menos' if c.diferencia > 0 else 'más' }}{% endif %}
+              </span>
+            </span>
+            <form method="post" action="{{ url_for('main.eliminar_saldo_real', control_id=c.id) }}">
+              <button type="submit" class="btn-texto-peligro" onclick="return confirm('¿Eliminar este control de saldo?')">Eliminar</button>
+            </form>
+          </div>
+        {% else %}
+          <p class="vacio lista-vacia">Cada tanto, cargá cuánto tenés en total en tus billeteras (desde el Resumen o acá). La app corrige su simulación a ese valor y te muestra cuánto se había desviado.</p>
+        {% endfor %}
+        <form method="post" action="{{ url_for('main.cargar_saldo_real') }}" class="saldo-real-form lista-pie">
+          <input type="hidden" name="volver" value="{{ url_for('main.configuracion') }}#aportes">
+          <div class="campo">
+            <label for="control-monto">Saldo real total</label>
+            <input id="control-monto" type="number" name="monto" step="0.01" min="0" required>
+          </div>
+          <div class="campo">
+            <label for="control-fecha">Al cierre del</label>
+            <input id="control-fecha" type="date" name="fecha" required>
+          </div>
+          <button type="submit">Cargar saldo real</button>
+        </form>
+      </div>
+      </div>
+    </section>
+    <aside class="panel-edicion" id="panel-aporte" aria-labelledby="panel-aporte-titulo" data-url-agregar="{{ url_for('main.configuracion') }}" data-singular="aporte">
+      <div class="panel-cabecera">
+        <div>
+          <span class="panel-modo" data-panel-modo>Nuevo aporte</span>
+          <h2 id="panel-aporte-titulo" data-panel-titulo>Agregar aporte</h2>
+        </div>
+        <button type="button" class="btn-icono" data-panel-cerrar aria-label="Cerrar y volver a agregar" hidden>×</button>
+      </div>
+      <form method="post" action="{{ url_for('main.configuracion') }}" class="panel-form">
+        <div class="campo">
+          <label for="aporte-monto">Monto</label>
+          <input id="aporte-monto" type="number" name="monto" step="0.01" min="0.01" required>
+        </div>
+        <div class="campo">
+          <label for="aporte-fecha">Fecha</label>
+          <input id="aporte-fecha" type="date" name="fecha" required>
+        </div>
+        <div class="panel-acciones">
+          <button type="submit" class="btn-primary" data-guardar>Agregar</button>
+          <button type="button" class="btn-secondary" data-panel-cerrar hidden>Cancelar</button>
+          <button type="submit" class="btn-texto-peligro" data-eliminar formnovalidate hidden>Eliminar</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+</section>
+
+<section class="panel-pestana" role="tabpanel" id="panel-tab-gastos" aria-labelledby="tab-gastos" hidden>
+  {{ tab_movimientos("egreso", egresos, true, "gasto", "gastos") }}
+</section>
+
+<section class="panel-pestana" role="tabpanel" id="panel-tab-ingresos" aria-labelledby="tab-ingresos" hidden>
+  {{ tab_movimientos("ingreso", ingresos, false, "ingreso", "ingresos") }}
+</section>
+
+<section class="panel-pestana" role="tabpanel" id="panel-tab-ajustes" aria-labelledby="tab-ajustes" hidden>
+  <p class="subtitle">Para cada gasto o ingreso con aumento periódico (ej. alquiler cada 4 meses), cargá el % real cuando se conozca. Los ajustes sin dato usan el % estimado. La sugerencia es la inflación (IPC INDEC) acumulada de los meses previos al ajuste.</p>
+
+  {% if ajustes %}
+  <section class="carrusel llenar" data-carrusel="ajustes" aria-label="Ajustes por movimiento">
+    <div class="carrusel-cuerpo">
+  {% for a in ajustes %}
+    <div class="carrusel-slide ajuste-card" data-titulo="{{ a.mov.etiqueta }}">
+      <p class="slide-meta ajuste-meta">
+        <span class="badge">{{ a.tipo }}</span> Hoy <strong>{{ a.monto_hoy|pesos }}</strong> / mes
+        · base {{ a.mov.monto|pesos }} desde {{ a.mov.aumento_inicio.strftime("%d/%m/%Y") }}
+        · ajusta cada {{ a.mov.aumento_periodo_meses }} meses
+        · estimado {{ a.mov.aumento_pct|ar }}% por ajuste
+      </p>
+      {% if a.calendario %}
+        <div class="table-scroll tabla-llena">
+          <table class="tabla-config">
+            <thead>
+              <tr>
+                <th>Ajuste</th>
+                <th>% aplicado</th>
+                <th>Sugerido por IPC</th>
+                <th class="num">Monto desde ese mes</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for aj in a.calendario %}
+                {% set form_id = "ajuste-" ~ a.tipo ~ "-" ~ a.id ~ "-" ~ aj.fecha.isoformat() %}
+                <tr>
+                  <td>
+                    {{ aj.nombre_mes }}
+                    {% if aj.real %}<span class="badge badge-real">real</span>{% else %}<span class="badge">estimado</span>{% endif %}
+                  </td>
+                  <td>
+                    <input type="text" inputmode="decimal" form="{{ form_id }}" name="pct" class="input-pct" value="{{ aj.pct|ar if aj.real else '' }}" placeholder="{{ aj.pct|ar }}" required aria-label="% del ajuste de {{ aj.nombre_mes }}"> %
+                  </td>
+                  <td>
+                    <span class="ipc-sugerido" data-mes="{{ aj.fecha.strftime('%Y-%m') }}" data-periodo="{{ a.mov.aumento_periodo_meses }}">…</span>
+                    <button type="button" class="btn-secondary btn-usar-ipc" data-form="{{ form_id }}" hidden>Usar</button>
+                  </td>
+                  <td class="num">{{ aj.monto|pesos }}</td>
+                  <td class="acciones">
+                    <button type="submit" form="{{ form_id }}">Guardar</button>
+                    {% if aj.real %}
+                      <button type="submit" class="btn-secondary" form="{{ form_id }}" formnovalidate formaction="{{ url_for('main.eliminar_ajuste', tipo=a.tipo, mov_id=a.id, fecha=aj.fecha.isoformat()) }}">Volver a estimado</button>
+                    {% endif %}
+                    <form id="{{ form_id }}" method="post" action="{{ url_for('main.guardar_ajuste', tipo=a.tipo, mov_id=a.id) }}">
+                      <input type="hidden" name="fecha" value="{{ aj.fecha.isoformat() }}">
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="vacio">Todavía no hay ajustes en los próximos 12 meses.</p>
+      {% endif %}
+    </div>
+  {% endfor %}
+    </div>
+  </section>
+  {% else %}
+    <p class="vacio">Ningún gasto o ingreso recurrente tiene aumento periódico. Al editar uno, completá el % estimado, "cada cuántos meses" y "desde" para cargar acá el % real de cada ajuste.</p>
+  {% endif %}
+</section>
+
+<section class="panel-pestana" role="tabpanel" id="panel-tab-billeteras" aria-labelledby="tab-billeteras" hidden>
+  <p class="subtitle">Ajustá tasa y horarios cuando la billetera los cambie. La acreditación es al día siguiente; techo vacío = sin límite.</p>
+  <div class="table-scroll tabla-llena llenar">
+    <table class="tabla-billeteras">
+    <thead>
+      <tr>
+        <th>Billetera</th>
+        <th>Días</th>
+        <th>Captura</th>
+        <th>Acreditación</th>
+        <th>TNA %</th>
+        <th>Piso</th>
+        <th>Techo</th>
+        <th>Activa</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for w in wallets %}
+      {% set form_id = "billetera-" ~ w["id"] %}
+      <tr class="{{ 'row-inactiva' if not w['activo'] }}">
+        <td>{{ w["name"] }} {% if not w["activo"] %}<span class="badge">inactiva</span>{% endif %}</td>
+        <td class="muted">
+          {% if w["active_weekdays"] == "5,6" %}Sáb y dom
+          {%- elif w["active_weekdays"] == "4" %}Viernes
+          {%- else %}Lun a vie{% endif %}
+        </td>
+        <td><input type="time" name="capture_time" form="{{ form_id }}" value="{{ w['capture_time'] }}" required aria-label="Hora de captura de {{ w['name'] }}"></td>
+        <td><input type="time" name="payout_time" form="{{ form_id }}" value="{{ w['payout_time'] }}" required aria-label="Hora de acreditación de {{ w['name'] }}"></td>
+        <td><input type="number" step="0.01" min="0" name="tna" form="{{ form_id }}" value="{{ w['tna'] }}" required aria-label="TNA de {{ w['name'] }}"></td>
+        <td><input type="number" step="0.01" min="0" name="monto_minimo" form="{{ form_id }}" value="{{ w['monto_minimo'] }}" aria-label="Piso de {{ w['name'] }}"></td>
+        <td><input type="number" step="0.01" min="0" name="monto_maximo" form="{{ form_id }}" value="{{ w['monto_maximo'] if w['monto_maximo'] is not none else '' }}" placeholder="Sin límite" aria-label="Techo de {{ w['name'] }}"></td>
+        <td><input type="checkbox" name="activo" form="{{ form_id }}" {{ "checked" if w["activo"] }} aria-label="{{ w['name'] }} activa"></td>
+        <td>
+          <form id="{{ form_id }}" method="post" action="{{ url_for('main.actualizar_billetera', wallet_id=w['id']) }}">
+            <button type="submit">Guardar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel-pestana" role="tabpanel" id="panel-tab-dolar" aria-labelledby="tab-dolar" hidden>
+  <section class="chart-card cotizacion-card">
+    <div>
+      <span class="stat-label">Dólar Blue en Córdoba · venta</span>
+      {% if cotizacion_usd %}
+        <strong>{{ cotizacion_usd.valor|pesos }}</strong>
+        <span class="subtitle">infodolar, publicado {{ cotizacion_usd.publicado.strftime("%d/%m %H:%M") }} · consultado {{ cotizacion_usd.actualizado.strftime("%d/%m %H:%M") }}.</span>
+      {% else %}
+        <strong>Sin cotización</strong>
+        <span class="subtitle">Se consulta a infodolar la primera vez que cargues algo en US$.</span>
+      {% endif %}
+    </div>
+    <form method="post" action="{{ url_for('main.actualizar_cotizacion') }}">
+      <button type="submit" class="btn-secondary">Actualizar ahora</button>
+    </form>
+  </section>
+  <p class="subtitle">Pasa a pesos todo lo que cargues en US$ (por ejemplo las cuotas de Invisalign) y se actualiza solo cada 6 horas mientras usás la app. Sin conexión, sigue con el último valor guardado.</p>
+</section>
+
+<section class="panel-pestana" role="tabpanel" id="panel-tab-avisos" aria-labelledby="tab-avisos" hidden>
+  <section class="chart-card avisos-card">
+    <h2>Recordatorios del rulo</h2>
+    <p class="subtitle">La app de escritorio te avisa con una notificación del sistema cuándo mover la plata y qué pagos vencen. Funcionan mientras la app esté abierta o en segundo plano.</p>
+    <form method="post" action="{{ url_for('main.guardar_avisos') }}" class="panel-form">
+      <div class="panel-grupo">
+        <label class="check"><input type="checkbox" name="avisos_rulo" {{ "checked" if prefs.avisos_rulo }}> Avisarme antes de cada captura</label>
+        <div class="campo campo-corto">
+          <label for="avisos-minutos">Minutos antes</label>
+          <input id="avisos-minutos" type="number" name="avisos_minutos" min="0" max="120" value="{{ prefs.avisos_minutos }}">
+          <span class="campo-ayuda">Además avisa a la hora justa. Con 0, solo a la hora justa.</span>
+        </div>
+      </div>
+      <div class="panel-grupo">
+        <label class="check"><input type="checkbox" name="avisos_pagos" {{ "checked" if prefs.avisos_pagos }}> Avisarme a la mañana los pagos que vencen ese día</label>
+      </div>
+      <div class="panel-grupo">
+        <label class="check"><input type="checkbox" name="segundo_plano" {{ "checked" if prefs.segundo_plano }}> Al cerrar la ventana, seguir funcionando en segundo plano</label>
+        <span class="campo-ayuda">Queda un ícono en la bandeja del sistema para abrirla o salir. Sin esto, cerrar la ventana corta los avisos.</span>
+      </div>
+      <div class="panel-acciones">
+        <button type="submit">Guardar</button>
+        <button type="submit" class="btn-secondary" formaction="{{ url_for('main.probar_aviso') }}">Mandar aviso de prueba</button>
+      </div>
+    </form>
+  </section>
+</section>
+
+<section class="panel-pestana" role="tabpanel" id="panel-tab-respaldo" aria-labelledby="tab-respaldo" hidden>
+  <div class="two-col">
+    <section class="chart-card">
+      <h2>Sincronizar entre tus PCs</h2>
+      <p class="subtitle">Elegí una carpeta que se sincronice sola entre tus computadoras (por ejemplo, una de Google Drive para escritorio). Cada cambio se guarda ahí, y al abrir la app en la otra PC se traen los datos.</p>
+      <form method="post" action="{{ url_for('main.guardar_sync') }}" class="panel-form">
+        <div class="campo">
+          <label for="sync-carpeta">Carpeta compartida</label>
+          <input id="sync-carpeta" type="text" name="carpeta" value="{{ sync.carpeta }}" placeholder="Ej. G:\Mi unidad\Rulo  o  ~/GoogleDrive/Rulo">
+          <span class="campo-ayuda">Dejala vacía para desactivar la sincronización. Cada PC puede tener su propia ruta.</span>
+        </div>
+        <div class="panel-acciones">
+          <button type="submit">Guardar carpeta</button>
+        </div>
+      </form>
+      {% if sync.activa %}
+        <dl class="lista-datos">
+          <div><dt>Estado</dt><dd>
+            {% if not sync.carpeta_existe %}<span class="negativo">No se encuentra la carpeta</span>
+            {% elif sync.pendiente %}<span class="negativo">Hay cambios sin subir</span>
+            {% else %}<span class="positivo">Sincronizado</span>{% endif %}
+          </dd></div>
+          <div><dt>Última sincronización</dt><dd>{{ sync.ultimo[8:10] ~ "/" ~ sync.ultimo[5:7] ~ " " ~ sync.ultimo[11:16] if sync.ultimo else "Todavía no" }}</dd></div>
+        </dl>
+        <form method="post" action="{{ url_for('main.sincronizar_ahora') }}">
+          <button type="submit" class="btn-secondary">Sincronizar ahora</button>
+        </form>
+      {% endif %}
+    </section>
+
+    <section class="chart-card">
+      <h2>Copia de seguridad</h2>
+      <p class="subtitle">La app guarda sola un backup antes de cada actualización o restauración ({{ cantidad_backups }} guardados en <code>{{ carpeta_backups }}</code>).</p>
+      <div class="acciones-respaldo">
+        <a class="boton boton-primario" href="{{ url_for('main.descargar_respaldo') }}">Descargar respaldo</a>
+        <a class="boton boton-secundario" href="{{ url_for('main.exportar_movimientos') }}">Exportar movimientos a Excel</a>
+      </div>
+      <form method="post" action="{{ url_for('main.restaurar_respaldo') }}" enctype="multipart/form-data" class="panel-form restaurar-form"
+            onsubmit="return confirm('Esto reemplaza todos tus datos por los del archivo. Tus datos actuales quedan en la carpeta de backups. ¿Seguimos?')">
+        <div class="campo">
+          <label for="respaldo-archivo">Restaurar desde un respaldo (.db)</label>
+          <input id="respaldo-archivo" type="file" name="archivo" accept=".db" required>
+        </div>
+        <div class="panel-acciones">
+          <button type="submit" class="btn-secondary">Restaurar</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</section>
+
+<script>
+  (function () {
+    const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    const fmtPct = (v) => v.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const nombreMes = (clave) => {
+      const [anio, mes] = clave.split("-");
+      return `${MESES_CORTOS[Number(mes) - 1]} ${anio.slice(2)}`;
+    };
+
+    // Inflación acumulada de los `periodo` meses publicados anteriores al mes del ajuste.
+    function sugerencia(meses, mesAjuste, periodo) {
+      const previos = meses.filter((m) => m.mes < mesAjuste);
+      if (previos.length < periodo) return null;
+      const usados = previos.slice(-periodo);
+      const acumulado = usados.reduce((acc, m) => acc * (1 + m.valor / 100), 1);
+      return { pct: (acumulado - 1) * 100, desde: usados[0].mes, hasta: usados[usados.length - 1].mes };
+    }
+
+    const celdas = document.querySelectorAll(".ipc-sugerido");
+    if (!celdas.length) return;
+
+    fetch("{{ url_for('main.api_ipc') }}")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(({ meses }) => {
+        celdas.forEach((celda) => {
+          const s = sugerencia(meses, celda.dataset.mes, Number(celda.dataset.periodo));
+          if (!s) { celda.textContent = "—"; return; }
+          const pct = Math.round(s.pct * 100) / 100;
+          celda.textContent = `${fmtPct(pct)}% (${nombreMes(s.desde)}–${nombreMes(s.hasta)})`;
+          celda.title = "IPC INDEC acumulado de esos meses";
+          const boton = celda.nextElementSibling;
+          boton.hidden = false;
+          boton.addEventListener("click", () => {
+            const input = document.querySelector(`input[name="pct"][form="${boton.dataset.form}"]`);
+            input.value = fmtPct(pct);
+            input.focus();
+          });
+        });
+      })
+      .catch(() => {
+        celdas.forEach((celda) => {
+          celda.textContent = "Sin conexión";
+          celda.title = "No se pudo consultar el IPC";
+        });
+      });
+  })();
+</script>
+<script src="{{ url_for('static', filename='configuracion.js') }}"></script>
+{% endblock %}

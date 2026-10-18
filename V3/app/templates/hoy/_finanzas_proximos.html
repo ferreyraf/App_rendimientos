@@ -1,0 +1,13 @@
+{# Lo que viene en la semana. #}
+{% for m in proximos %}
+  <div class="fila-movimiento">
+    <span class="muted">{{ m.fecha.strftime("%d/%m") }}</span>
+    <span class="fila-movimiento-etiqueta">
+      {{ m.etiqueta }}
+      {% if m.moneda == "USD" %}<span class="badge">US{{ m.monto_original|pesos(0) }}</span>{% endif %}
+    </span>
+    <span class="{{ 'positivo' if m.monto > 0 else 'negativo' }}">{{ '+' if m.monto > 0 else '−' }}{{ m.monto|abs|pesos(0) }}</span>
+  </div>
+{% else %}
+  <p class="vacio lista-vacia">Nada en los próximos 7 días.</p>
+{% endfor %}

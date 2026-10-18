@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Resumen</h1>
+    <p class="subtitle">{{ dia_semana }} {{ hoy.strftime("%d/%m/%Y") }}</p>
+  </div>
+  <div class="header-acciones">
+    {% if cotizacion_usd %}
+      <span class="chip">Dólar blue Cba <strong>{{ cotizacion_usd.valor|pesos(0) }}</strong></span>
+    {% endif %}
+    <a class="boton boton-primario" href="{{ url_for('main.configuracion', _anchor='gastos') }}">+ Agregar movimiento</a>
+  </div>
+</header>
+
+{% include "_alertas.html" %}
+
+<section class="hero-card" aria-labelledby="capital-hoy">
+  <div class="hero-principal">
+    <span id="capital-hoy" class="hero-label">Capital en el rulo hoy</span>
+    {% set entero, decimales = (capital_hoy|pesos).split(",") %}
+    <span class="hero-valor {{ 'negativo' if capital_hoy < 0 }}"><span data-contar>{{ entero }}</span><span class="hero-decimales">,{{ decimales }}</span></span>
+    <span class="hero-detalle">
+      Proyectado al {{ fin_mes.strftime("%d/%m") }}: <strong>{{ capital_fin_mes|pesos(0) }}</strong>
+      {% if rendimiento_resto_mes > 0 %}<span class="positivo">+{{ rendimiento_resto_mes|pesos(0) }} de rendimiento</span>{% endif %}
+    </span>
+    <details class="saldo-real">
+      <summary>
+        {% if ultimo_control %}
+          Último saldo real: {{ ultimo_control.fecha.strftime("%d/%m") }}
+          {%- if ultimo_control.diferencia|abs >= 1 %} · la simulación estaba {{ ultimo_control.diferencia|abs|pesos(0) }} {{ 'abajo' if ultimo_control.diferencia > 0 else 'arriba' }}{% endif %}
+          · <span class="link">cargar otro</span>
+        {% else %}
+          <span class="link">Cargar saldo real</span> para recalibrar
+        {% endif %}
+      </summary>
+      <form method="post" action="{{ url_for('main.cargar_saldo_real') }}" class="saldo-real-form">
+        <input type="hidden" name="volver" value="{{ url_for('main.dashboard') }}">
+        <div class="campo">
+          <label for="saldo-real-monto">Total en tus billeteras</label>
+          <input id="saldo-real-monto" type="number" name="monto" step="0.01" min="0" required placeholder="Ej. 780000">
+        </div>
+        <div class="campo">
+          <label for="saldo-real-fecha">Al cierre del</label>
+          <input id="saldo-real-fecha" type="date" name="fecha" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required>
+        </div>
+        <button type="submit">Guardar</button>
+      </form>
+    </details>
+  </div>
+  <div class="hero-comparacion">
+    <span class="hero-label">A {{ nombre_horizonte }}</span>
+    <div class="fila-dato"><span>Con rulo</span><strong>{{ con_rulo_horizonte|pesos(0) }}</strong></div>
+    <div class="fila-dato secundaria"><span>Sin rulo</span><span>{{ sin_rulo_horizonte|pesos(0) }}</span></div>
+    <div class="fila-dato total-rulo"><span>Lo que suma el rulo</span><strong class="positivo">+{{ (con_rulo_horizonte - sin_rulo_horizonte)|pesos(0) }}</strong></div>
+  </div>
+</section>
+
+<section class="kpi-row" aria-label="Este mes en números">
+  <div class="stat-tile">
+    <p class="stat-label">Ingresos de {{ nombre_mes }}</p>
+    <p class="stat-value positivo" data-contar>+{{ total_ingresos_mes|pesos(0) }}</p>
+    <p class="stat-note">{{ ingresos_mes|map(attribute='etiqueta')|unique|join(' + ') or 'Sin ingresos cargados' }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Egresos de {{ nombre_mes }}</p>
+    <p class="stat-value negativo" data-contar>−{{ total_egresos_mes|pesos(0) }}</p>
+    <p class="stat-note">{{ egresos_mes|length }} movimiento{{ 's' if egresos_mes|length != 1 }}</p>
+  </div>
+  <div class="stat-tile">
+    {% set saldo_mes = total_ingresos_mes - total_egresos_mes %}
+    <p class="stat-label">Saldo de {{ nombre_mes }}</p>
+    <p class="stat-value {{ 'positivo' if saldo_mes >= 0 else 'negativo' }}" data-contar>{{ '+' if saldo_mes >= 0 else '−' }}{{ saldo_mes|abs|pesos(0) }}</p>
+    <p class="stat-note">{{ 'Te sobra para sumar al rulo' if saldo_mes >= 0 else 'Lo cubre el capital del rulo' }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Próximo ajuste</p>
+    {% if proximo_ajuste %}
+      <p class="stat-value">{{ proximo_ajuste.etiqueta }} · {{ nombre_mes_ajuste }}</p>
+      <p class="stat-note">{{ '+' if proximo_ajuste.pct >= 0 else '' }}{{ proximo_ajuste.pct|ar }}%{{ '' if proximo_ajuste.real else ' estimado' }} → {{ proximo_ajuste.monto|pesos(0) }}</p>
+    {% else %}
+      <p class="stat-value">—</p>
+      <p class="stat-note">Ningún gasto tiene aumento cargado</p>
+    {% endif %}
+  </div>
+</section>
+
+<div class="fila-llena llenar">
+  <section class="carrusel" data-carrusel="resumen-mes" aria-label="El mes">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide slide-repartido" data-titulo="Gastos de {{ nombre_mes }}">
+        <p class="slide-meta">Por categoría · total <strong>{{ total_egresos_mes|pesos(0) }}</strong></p>
+        {% for item in egresos_por_categoria %}
+          <div class="barra-categoria">
+            <div class="barra-categoria-texto">
+              <span>{{ item.categoria }}</span>
+              {% if item.monto %}
+                <span><strong>{{ item.monto|pesos(0) }}</strong> <span class="muted">{{ item.pct|round|int }}%</span></span>
+              {% else %}
+                <span class="muted">Sin cargar</span>
+              {% endif %}
+            </div>
+            <div class="barra-pista"><div class="barra-relleno" style="width: {{ [item.pct, 100]|min }}%"></div></div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="carrusel-slide" data-titulo="Próximos movimientos">
+        <p class="slide-meta">Las próximas semanas · <a href="{{ url_for('main.configuracion', _anchor='gastos') }}">ver todos</a></p>
+        {% for m in proximos %}
+          <div class="fila-movimiento">
+            <span class="muted">{{ m.fecha.strftime("%d/%m") }}</span>
+            <span class="fila-movimiento-etiqueta">
+              {{ m.etiqueta }}
+              {% if m.moneda == "USD" %}<span class="badge">US{{ m.monto_original|pesos(0) }}</span>{% endif %}
+            </span>
+            <span class="{{ 'positivo' if m.monto > 0 else 'negativo' }}">{{ '+' if m.monto > 0 else '−' }}{{ m.monto|abs|pesos(0) }}</span>
+          </div>
+        {% else %}
+          <p class="subtitle">No hay movimientos en las próximas semanas.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="carrusel" data-carrusel="resumen-rulo" aria-label="El rulo">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="El rulo hoy">
+        {% include "parciales/_rulo_hoy.html" %}
+      </div>
+
+      <div class="carrusel-slide" data-titulo="Rendimiento">
+        <dl class="lista-datos">
+          <div><dt>Rendimiento acumulado del rulo</dt><dd class="{{ 'positivo' if rendimiento_acumulado >= 0 else 'negativo' }}"><strong>{{ rendimiento_acumulado|pesos }}</strong></dd></div>
+          <div><dt>Extra por rotar vs. la mejor billetera quieta</dt><dd class="{{ 'positivo' if ventaja_rulo >= 0 else 'negativo' }}">{{ ventaja_rulo|pesos }}</dd></div>
+          <div><dt>Total aportado</dt><dd>{{ total_aportado|pesos }}</dd></div>
+          <div><dt>Patrimonio total (rulo + <a href="{{ url_for('main.patrimonio') }}">inversiones</a>)</dt><dd>{{ patrimonio_total|pesos }}</dd></div>
+        </dl>
+      </div>
+
+      <div class="carrusel-slide" data-titulo="Capturas de hoy">
+        {% include "parciales/_capturas_hoy.html" %}
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ app_name }}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='icono.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    // Siempre arranca en oscuro. Si se elige claro con el botón Tema, dura
+    // mientras la ventana esté abierta (sessionStorage), no entre aperturas.
+    (function () {
+      var tema = "dark";
+      try {
+        tema = sessionStorage.getItem("theme") === "light" ? "light" : "dark";
+        localStorage.removeItem("theme");
+      } catch (e) {}
+      document.documentElement.dataset.theme = tema;
+    })();
+  </script>
+</head>
+<body>
+{%- set iconos = {
+  "hoy": '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>',
+  "dashboard": '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  "graficos": '<path d="M4 20V11M10 20V5M16 20v-7M21 20H3"/>',
+  "proyeccion": '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+  "historial": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  "mes": '<rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="M8.5 15l2.3 2.3 4.7-4.6"/>',
+  "calculadora": '<rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M8.5 7h7M8.5 12h1.5M14 12h1.5M8.5 16h1.5M14 16h1.5"/>',
+  "recuperacion": '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>',
+  "patrimonio": '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14.5h2"/>',
+  "configuracion": '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/>',
+  "acerca": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+} %}
+{#- Secciones del menú: cada una se pliega; la de la página actual queda
+    abierta. Las secciones nuevas (Rutina, Entrenamiento) se suman acá. #}
+{%- set secciones = [
+  {"id": "finanzas", "titulo": "Finanzas", "enlaces": [
+    ("main.dashboard", "Resumen", "dashboard"),
+    ("main.este_mes", "Este mes", "mes"),
+    ("main.graficos", "Gráficos", "graficos"),
+    ("main.proyeccion", "Proyección", "proyeccion"),
+    ("main.historial", "Historial", "historial"),
+    ("main.calculadora", "Calculadora", "calculadora"),
+    ("main.recuperacion", "Recuperación", "recuperacion"),
+    ("main.patrimonio", "Patrimonio", "patrimonio"),
+  ]},
+] %}
+{%- macro enlace(endpoint, texto, icono) -%}
+  <a class="sidebar-link" href="{{ url_for(endpoint) }}" {{ 'aria-current="page"'|safe if request.endpoint == endpoint }}>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ iconos[icono]|safe }}</svg>
+    {{ texto }}
+  </a>
+{%- endmacro %}
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <a class="sidebar-brand" href="{{ url_for('hoy.inicio') }}">
+        <img src="{{ url_for('static', filename='icono.png') }}" alt="" width="30" height="30">
+        <span>{{ app_name }}</span>
+      </a>
+      <button type="button" class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="nav-links" aria-label="Abrir menú">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+    </div>
+    <nav class="sidebar-nav" id="nav-links" aria-label="Secciones">
+      {{ enlace("hoy.inicio", "Hoy", "hoy") }}
+
+      {% for sec in secciones %}
+        {% set activa = request.endpoint in sec.enlaces|map(attribute=0)|list %}
+        <details class="sidebar-seccion" data-seccion="{{ sec.id }}" {{ "open" if activa }} {{ "data-activa" if activa }}>
+          <summary class="sidebar-group">
+            {{ sec.titulo }}
+            <svg class="sidebar-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </summary>
+          {% for endpoint, texto, icono in sec.enlaces %}
+            {{ enlace(endpoint, texto, icono) }}
+          {% endfor %}
+        </details>
+      {% endfor %}
+
+      <div class="sidebar-spacer"></div>
+      {{ enlace("main.configuracion", "Configuración", "configuracion") }}
+      {{ enlace("main.acerca", "Acerca de", "acerca") }}
+      <a class="aviso-version" id="aviso-version" href="#" target="_blank" rel="noopener" hidden>
+        <span class="aviso-version-punto" aria-hidden="true"></span>
+        <span>Nueva versión <strong data-version-nueva></strong> disponible</span>
+      </a>
+      <div class="sidebar-footer">
+        <span title="Versión {{ app_version }}">Versión {{ app_version }}</span>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambiar tema claro/oscuro" title="Cambiar tema claro/oscuro">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
+          Tema
+        </button>
+      </div>
+    </nav>
+  </aside>
+  <main class="app-main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-list" role="status">
+      {% for category, message in messages %}
+        <p class="flash flash-{{ category }}">
+          <span>{{ message }}</span>
+          <button type="button" class="flash-close" aria-label="Cerrar mensaje">&times;</button>
+        </p>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+<script src="{{ url_for('static', filename='app.js') }}" data-api-version="{{ url_for('main.api_version') }}"></script>
+</body>
+</html>
