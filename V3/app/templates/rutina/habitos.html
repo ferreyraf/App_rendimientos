@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Hábitos</h1>
+    <p class="subtitle">Tildá lo que vas haciendo. Las rachas cuentan los días seguidos cumplidos.</p>
+  </div>
+  <div class="header-acciones">
+    {% if not sin_habitos %}
+    <nav class="mes-selector" aria-label="Cambiar de día">
+      <a class="boton-icono" href="{{ url_for('rutina.habitos', fecha=anterior) }}" aria-label="Día anterior">‹</a>
+      <span class="mes-actual">{{ nombre_fecha }}</span>
+      {% if siguiente %}<a class="boton-icono" href="{{ url_for('rutina.habitos', fecha=siguiente) }}" aria-label="Día siguiente">›</a>
+      {% else %}<span class="boton-icono deshabilitado" aria-hidden="true">›</span>{% endif %}
+    </nav>
+    {% endif %}
+    <a class="boton boton-secundario" href="{{ url_for('rutina.habitos_gestionar') }}">Gestionar hábitos</a>
+  </div>
+</header>
+
+{% if sin_habitos %}
+<div class="vacio-panel llenar">
+  <p>Todavía no tenés hábitos. <a href="{{ url_for('rutina.habitos_gestionar') }}">Creá el primero</a>: por ejemplo "Tomar agua" (8 vasos por día), "Leer 20 minutos" o "Estirar".</p>
+</div>
+{% else %}
+
+<section class="kpi-row" id="habitos-indicadores" data-refrescable aria-label="Cómo venís">
+  <div class="stat-tile">
+    <p class="stat-label">{{ "Hoy" if fecha == hoy else nombre_fecha }}</p>
+    <p class="stat-value {{ 'positivo' if total_dia and hechos_dia == total_dia }}">{{ hechos_dia }}/{{ total_dia }}</p>
+    <p class="stat-note">{{ "¡Todo hecho!" if total_dia and hechos_dia == total_dia else ("hábitos hechos" if total_dia else "Ningún hábito para este día") }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Racha más larga</p>
+    {% if mejor_activa %}
+      <p class="stat-value">🔥 {{ mejor_activa.actual }} día{{ 's' if mejor_activa.actual != 1 }}</p>
+      <p class="stat-note">{{ mejor_activa.h.nombre }}</p>
+    {% else %}
+      <p class="stat-value">—</p>
+      <p class="stat-note">Arrancá una hoy</p>
+    {% endif %}
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Esta semana</p>
+    <p class="stat-value">{{ pct_semana ~ '%' if pct_semana is not none else '—' }}</p>
+    <p class="stat-note">de lo previsto, cumplido</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Últimos 30 días</p>
+    <p class="stat-value">{{ pct_30 ~ '%' if pct_30 is not none else '—' }}</p>
+    <p class="stat-note">de cumplimiento</p>
+  </div>
+</section>
+
+<div class="fila-llena llenar">
+  <section class="lista-card lista-llena checklist-card" aria-label="Hábitos del día">
+    <div class="lista-card-titulo">
+      <h2>{{ "Hoy" if fecha == hoy else nombre_fecha }}</h2>
+      <span class="subtitle">{{ fecha.strftime("%d/%m/%Y") }}</span>
+    </div>
+    <div class="checklist" id="habitos-checklist" data-refrescable>
+      {% with en_hoy=false %}{% include "rutina/_checklist.html" %}{% endwith %}
+    </div>
+  </section>
+
+  <section class="carrusel" data-carrusel="habitos" aria-label="Seguimiento">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="Semana" id="habitos-semana" data-refrescable>
+        <div class="table-scroll tabla-llena">
+          <table class="tabla-semana">
+            <thead>
+              <tr>
+                <th>Hábito</th>
+                {% for d in dias_semana %}
+                  <th class="{{ 'col-hoy' if d == hoy }} {{ 'col-elegida' if d == fecha }}">
+                    <a href="{{ url_for('rutina.habitos', fecha=d.isoformat()) }}" {{ 'tabindex=-1' if d > hoy }}>{{ dias_cortos[d.weekday()] }}<br><span class="muted">{{ d.day }}</span></a>
+                  </th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for fila in semana %}
+                <tr>
+                  <td>{% if fila.h.icono %}{{ fila.h.icono }} {% endif %}{{ fila.h.nombre }}</td>
+                  {% for c in fila.celdas %}
+                    <td class="celda-semana {{ 'col-hoy' if c.fecha == hoy }}">
+                      {% if not c.aplica %}<span class="punto punto-no-aplica" title="No se hace este día">·</span>
+                      {% elif c.hecho %}<span class="punto punto-hecho" title="Hecho">✓</span>
+                      {% elif c.futuro %}<span class="punto punto-futuro"></span>
+                      {% elif c.fecha == hoy %}<span class="punto punto-pendiente" title="Pendiente"></span>
+                      {% else %}<span class="punto punto-fallado" title="No se hizo">✕</span>{% endif %}
+                    </td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="carrusel-slide" data-titulo="Mes" id="habitos-mes" data-refrescable>
+        <p class="slide-meta">{{ nombre_mes }} · tocá un día para verlo o completarlo</p>
+        <div class="calendario">
+          {% for d in dias_cortos %}<span class="calendario-dia-semana">{{ d }}</span>{% endfor %}
+          {% for c in celdas_mes %}
+            {% if c is none %}<span></span>
+            {% else %}
+              {% set nivel = 'sin-datos' if c.pct is none else ('nivel-4' if c.pct == 100 else ('nivel-3' if c.pct >= 66 else ('nivel-2' if c.pct >= 33 else ('nivel-1' if c.pct > 0 else 'nivel-0')))) %}
+              {% if c.fecha <= hoy %}
+                <a class="calendario-celda {{ nivel }} {{ 'calendario-elegido' if c.fecha == fecha }}" href="{{ url_for('rutina.habitos', fecha=c.fecha.isoformat()) }}" title="{{ c.fecha.strftime('%d/%m') }}: {{ c.texto or 'sin hábitos' }}">{{ c.fecha.day }}</a>
+              {% else %}
+                <span class="calendario-celda futuro">{{ c.fecha.day }}</span>
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="carrusel-slide" data-titulo="Rachas" id="habitos-rachas" data-refrescable>
+        <div class="table-scroll tabla-llena">
+          <table>
+            <thead><tr><th>Hábito</th><th>Cuándo</th><th class="num">Racha</th><th class="num">Mejor</th><th class="num">30 días</th></tr></thead>
+            <tbody>
+              {% for r in rachas %}
+                <tr>
+                  <td>{% if r.h.icono %}{{ r.h.icono }} {% endif %}{{ r.h.nombre }}</td>
+                  <td class="muted">{{ r.h.descripcion_dias }}{% if r.h.meta > 1 %} · {{ r.h.meta }}{{ ' ' ~ r.h.unidad if r.h.unidad }}{% endif %}</td>
+                  <td class="num">{{ '🔥 ' if r.actual }}{{ r.actual }}</td>
+                  <td class="num">{{ r.mejor }}</td>
+                  <td class="num">{{ r.pct30 ~ '%' if r.pct30 is not none else '—' }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

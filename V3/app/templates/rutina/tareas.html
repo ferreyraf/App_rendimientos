@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Tareas</h1>
+    <p class="subtitle">Lo que tenés que hacer, con fecha límite si la tiene. Tocá una tarea para editarla.</p>
+  </div>
+</header>
+
+<section class="kpi-row" id="tareas-indicadores" data-refrescable aria-label="Tus tareas">
+  <div class="stat-tile">
+    <p class="stat-label">Para hoy</p>
+    <p class="stat-value">{{ para_hoy }}</p>
+    <p class="stat-note">{{ "Nada para hoy" if not para_hoy else "pendiente" ~ ("s" if para_hoy != 1) }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Atrasadas</p>
+    <p class="stat-value {{ 'negativo' if atrasadas }}">{{ atrasadas }}</p>
+    <p class="stat-note">{{ "Ninguna" if not atrasadas else "con fecha pasada" }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Próximos 7 días</p>
+    <p class="stat-value">{{ semana }}</p>
+    <p class="stat-note">con fecha cercana</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Hechas esta semana</p>
+    <p class="stat-value positivo">{{ hechas_semana }}</p>
+    <p class="stat-note">desde el lunes</p>
+  </div>
+</section>
+
+<div class="config-split llenar">
+  <section class="config-lista carrusel" data-carrusel="tareas" aria-label="Tareas">
+    <div class="carrusel-cuerpo">
+      {% for clave, titulo, vacio in [
+          ("hoy", "Hoy", "No tenés nada para hoy ni atrasado."),
+          ("proximas", "Próximas", "No hay tareas con fecha más adelante."),
+          ("sin_fecha", "Sin fecha", "No hay tareas sin fecha."),
+          ("completadas", "Completadas", "Todavía no completaste tareas en los últimos 30 días."),
+        ] %}
+        <div class="carrusel-slide" data-titulo="{{ titulo }}" id="tareas-{{ clave }}" data-refrescable>
+          {% with tareas=grupos[clave], editable=true %}{% include "rutina/_tareas_lista.html" %}{% endwith %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="panel-edicion" id="panel-tarea" data-panel-edicion aria-labelledby="panel-tarea-titulo">
+    <div class="panel-cabecera">
+      <div>
+        <span class="panel-modo" data-panel-modo>Nueva tarea</span>
+        <h2 id="panel-tarea-titulo" data-panel-titulo>Agregar tarea</h2>
+      </div>
+      <button type="button" class="btn-icono" data-panel-cerrar data-solo-edicion aria-label="Cerrar y volver a agregar" hidden>×</button>
+    </div>
+    <form method="post" action="{{ url_for('rutina.crear_tarea') }}" class="panel-form">
+      <div class="campo">
+        <label for="tarea-titulo">Qué hay que hacer</label>
+        <input id="tarea-titulo" type="text" name="titulo" maxlength="120" required placeholder="Ej. Pagar el monotributo">
+      </div>
+      <div class="campo">
+        <label for="tarea-fecha">Para cuándo (opcional)</label>
+        <input id="tarea-fecha" type="date" name="fecha">
+        <div class="fechas-rapidas">
+          <button type="button" class="filtro" data-poner-fecha="0">Hoy</button>
+          <button type="button" class="filtro" data-poner-fecha="1">Mañana</button>
+          <button type="button" class="filtro" data-poner-fecha="7">En una semana</button>
+          <button type="button" class="filtro" data-poner-fecha="">Sin fecha</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="tarea-prioridad">Prioridad</label>
+        <select id="tarea-prioridad" name="prioridad">
+          {% for valor, nombre in prioridades.items() %}<option value="{{ valor }}" {{ 'selected' if valor == 1 }}>{{ nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="tarea-notas">Notas (opcional)</label>
+        <textarea id="tarea-notas" name="notas" rows="3" maxlength="1000"></textarea>
+      </div>
+      <div class="panel-acciones">
+        <button type="submit" class="btn-primary" data-guardar>Agregar</button>
+        <button type="button" class="btn-secondary" data-panel-cerrar data-solo-edicion hidden>Cancelar</button>
+        <button type="submit" class="btn-texto-peligro" formnovalidate data-solo-edicion data-url="url_eliminar" data-confirmar="¿Eliminar esta tarea?" hidden>Eliminar</button>
+      </div>
+    </form>
+  </aside>
+</div>
+
+<script>
+  // Atajos de fecha: hoy, mañana, en una semana o sin fecha.
+  document.querySelectorAll('[data-poner-fecha]').forEach((b) => b.addEventListener('click', () => {
+    const input = document.getElementById('tarea-fecha');
+    if (b.dataset.ponerFecha === '') { input.value = ''; return; }
+    const d = new Date();
+    d.setDate(d.getDate() + Number(b.dataset.ponerFecha));
+    input.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }));
+</script>
+{% endblock %}

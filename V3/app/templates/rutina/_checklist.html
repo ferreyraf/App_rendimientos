@@ -1,0 +1,44 @@
+{# Hábitos de un día para tildar. Usa: items (ver items_checklist), fecha,
+   volver y, en la pantalla Hoy, en_hoy. Los formularios son "rápidos": se
+   envían sin recargar (data-rapido) y la página refresca sus zonas. #}
+{% for it in items %}
+  {% set h = it.h %}
+  <div class="habito-fila {{ 'habito-hecho' if it.hecho }}">
+    <form method="post" action="{{ url_for('rutina.marcar_habito', habito_id=h.id) }}" data-rapido class="habito-form">
+      <input type="hidden" name="fecha" value="{{ fecha.isoformat() }}">
+      <input type="hidden" name="volver" value="{{ volver }}">
+      <button type="submit" name="accion" value="{{ 'alternar' if h.meta == 1 else 'sumar' }}" class="habito-check"
+              aria-pressed="{{ 'true' if it.hecho else 'false' }}"
+              aria-label="{{ ('Destildar ' if it.hecho else 'Tildar ') if h.meta == 1 else 'Sumar uno a ' }}{{ h.nombre }}">
+        {% if h.meta == 1 or it.hecho %}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+        {% else %}
+          <span aria-hidden="true">+1</span>
+        {% endif %}
+      </button>
+    </form>
+    <span class="habito-texto">
+      <strong>{% if h.icono %}<span class="habito-icono">{{ h.icono }}</span> {% endif %}{{ h.nombre }}</strong>
+      {% if h.meta > 1 %}
+        <span class="habito-progreso">
+          <span class="barra-pista"><span class="barra-relleno" style="width: {{ [it.cantidad * 100 // h.meta, 100]|min }}%"></span></span>
+          <span class="fila-config-detalle">{{ it.cantidad }}/{{ h.meta }}{{ ' ' ~ h.unidad if h.unidad }}</span>
+        </span>
+      {% elif not en_hoy %}
+        <span class="fila-config-detalle">{{ h.descripcion_dias }}</span>
+      {% endif %}
+    </span>
+    {% if h.meta > 1 and it.cantidad %}
+      <form method="post" action="{{ url_for('rutina.marcar_habito', habito_id=h.id) }}" data-rapido>
+        <input type="hidden" name="fecha" value="{{ fecha.isoformat() }}">
+        <input type="hidden" name="volver" value="{{ volver }}">
+        <button type="submit" name="accion" value="restar" class="btn-icono" aria-label="Restar uno a {{ h.nombre }}">−</button>
+      </form>
+    {% endif %}
+    {% if it.racha %}<span class="habito-racha" title="Racha: {{ it.racha }} día{{ 's' if it.racha != 1 }} seguido{{ 's' if it.racha != 1 }}">🔥 {{ it.racha }}</span>{% endif %}
+  </div>
+{% else %}
+  <div class="vacio-panel">
+    <p>No hay hábitos para este día. <a href="{{ url_for('rutina.habitos_gestionar') }}">Creá o editá tus hábitos</a>.</p>
+  </div>
+{% endfor %}

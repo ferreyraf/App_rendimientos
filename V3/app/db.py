@@ -192,6 +192,11 @@ def init_db():
     conn = _connect()
     conn.executescript(SCHEMA)
     _seed_usuario_local(conn)
+    # Tablas de las secciones nuevas (importadas acá: esos módulos no
+    # dependen de db, pero db tampoco debería cargarlos al importarse).
+    from .rutina.datos import SCHEMA as SCHEMA_RUTINA
+
+    conn.executescript(SCHEMA_RUTINA)
     _seed_wallets(conn)
     _migrate_legacy_egresos(conn)
     _migrate_dia_habil(conn)

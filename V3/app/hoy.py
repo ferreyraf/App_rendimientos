@@ -54,7 +54,7 @@ class AporteHoy:
     alertas: list[dict] = field(default_factory=list)
 
 
-def _panel(titulo: str, plantilla: str, **contexto) -> Panel:
+def panel(titulo: str, plantilla: str, **contexto) -> Panel:
     return Panel(titulo, Markup(render_template(plantilla, **contexto)))
 
 
@@ -64,7 +64,7 @@ def aporte_finanzas(conn, ahora: datetime) -> AporteHoy:
     if not aportes:
         return AporteHoy(
             indicadores=[Indicador("Finanzas", "Sin datos", "Cargá tu primer aporte", url=url_for("main.configuracion", _anchor="aportes"))],
-            paneles_estado=[_panel("Finanzas", "hoy/_finanzas_vacio.html")],
+            paneles_estado=[panel("Finanzas", "hoy/_finanzas_vacio.html")],
         )
 
     wallets = [_wallet_from_row(r) for r in db.get_wallets(conn)]
@@ -87,7 +87,6 @@ def aporte_finanzas(conn, ahora: datetime) -> AporteHoy:
     pagos = [f for f in del_mes if f["fecha"] == hoy or (f["vencido"] and f["fecha"] >= inicio)]
     pendientes = [f for f in pagos if f["real"] is None]
     semana = proximos_movimientos(egresos, ingresos, hoy + timedelta(days=1), hoy + timedelta(days=7))
-    egresos_semana = sum(-m.monto for m in semana if m.monto < 0)
 
     indicadores = [
         Indicador("Capital en el rulo", formato_pesos(capital_hoy, 0),
@@ -105,28 +104,32 @@ def aporte_finanzas(conn, ahora: datetime) -> AporteHoy:
             clase="negativo" if any(f["vencido"] for f in pendientes) else "",
             url=url_for("main.este_mes"),
         ),
-        Indicador("Gastos próximos 7 días", formato_pesos(egresos_semana, 0),
-                  f"{len(semana)} movimiento{'s' if len(semana) != 1 else ''}"),
     ]
 
     return AporteHoy(
         indicadores=indicadores,
         paneles_dia=[
-            _panel("Pagos de hoy", "hoy/_finanzas_pagos.html", filas=pagos, hoy=hoy,
+            panel("Pagos", "hoy/_finanzas_pagos.html", filas=pagos, hoy=hoy,
                    mes_param=f"{hoy.year}-{hoy.month}", volver=url_for("hoy.inicio")),
-            _panel("Próximos 7 días", "hoy/_finanzas_proximos.html", proximos=semana),
+            panel("Próximos días", "hoy/_finanzas_proximos.html", proximos=semana),
         ],
         paneles_estado=[
-            _panel("El rulo hoy", "parciales/_rulo_hoy.html", actual=actual, proxima=proxima, hoy=hoy,
+            panel("El rulo hoy", "parciales/_rulo_hoy.html", actual=actual, proxima=proxima, hoy=hoy,
                    summary=summary, vencimiento=vencimiento, dias_para_vencimiento=(vencimiento - hoy).days),
-            _panel("Capturas de hoy", "parciales/_capturas_hoy.html", summary=summary, ahora=ahora),
+            panel("Capturas de hoy", "parciales/_capturas_hoy.html", summary=summary, ahora=ahora),
         ],
         alertas=_alertas(conn, capital_por_dia, hoy, egresos, ingresos),
     )
 
 
+def aporte_rutina(conn, ahora: datetime) -> AporteHoy:
+    from .rutina.rutas import aporte_hoy
+
+    return aporte_hoy(conn, ahora)
+
+
 # Orden en que las secciones aparecen en la pantalla.
-APORTES = [aporte_finanzas]
+APORTES = [aporte_rutina, aporte_finanzas]
 
 
 @bp.route("/")

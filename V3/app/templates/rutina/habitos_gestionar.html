@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Gestionar hábitos</h1>
+    <p class="subtitle">Tocá un hábito para editarlo. Archivar lo saca del día a día pero guarda su historial.</p>
+  </div>
+  <a class="boton boton-secundario" href="{{ url_for('rutina.habitos') }}">‹ Volver a Hábitos</a>
+</header>
+
+{% macro fila(h, edicion) %}
+  <button type="button" class="fila-config" data-editar='{{ edicion }}' data-panel="panel-habito">
+    <span class="fila-config-principal">
+      <strong>{% if h.icono %}{{ h.icono }} {% endif %}{{ h.nombre }}</strong>
+      <span class="fila-config-detalle">{{ h.descripcion_dias }} · desde {{ h.desde.strftime("%d/%m/%Y") }}</span>
+    </span>
+    <span class="fila-config-monto">{{ h.meta }}{{ ' ' ~ h.unidad if h.unidad }}{{ ' por día' if h.meta > 1 or h.unidad else ' vez por día' }}</span>
+  </button>
+{% endmacro %}
+
+<div class="config-split llenar">
+  <section class="config-lista carrusel" data-carrusel="habitos-gestionar" aria-label="Tus hábitos">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="Activos">
+        {% for h, edicion in activos %}{{ fila(h, edicion) }}
+        {% else %}<p class="vacio lista-vacia">Todavía no tenés hábitos. Cargá el primero con el formulario de la derecha.</p>{% endfor %}
+      </div>
+      <div class="carrusel-slide" data-titulo="Archivados">
+        {% for h, edicion in archivados %}{{ fila(h, edicion) }}
+        {% else %}<p class="vacio lista-vacia">No hay hábitos archivados.</p>{% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel-edicion" id="panel-habito" data-panel-edicion aria-labelledby="panel-habito-titulo">
+    <div class="panel-cabecera">
+      <div>
+        <span class="panel-modo" data-panel-modo>Nuevo hábito</span>
+        <h2 id="panel-habito-titulo" data-panel-titulo>Agregar hábito</h2>
+      </div>
+      <button type="button" class="btn-icono" data-panel-cerrar data-solo-edicion aria-label="Cerrar y volver a agregar" hidden>×</button>
+    </div>
+    <form method="post" action="{{ url_for('rutina.crear_habito') }}" class="panel-form">
+      <div class="campos-dobles campos-nombre">
+        <div class="campo campo-icono">
+          <label for="habito-icono">Ícono</label>
+          <input id="habito-icono" type="text" name="icono" maxlength="8" placeholder="💧">
+        </div>
+        <div class="campo">
+          <label for="habito-nombre">Nombre</label>
+          <input id="habito-nombre" type="text" name="nombre" maxlength="60" required placeholder="Ej. Tomar agua">
+        </div>
+      </div>
+      <fieldset class="panel-grupo">
+        <legend>Qué días</legend>
+        <div class="selector-dias">
+          {% for d in dias_cortos %}
+            <label><input type="checkbox" name="dias" value="{{ loop.index0 }}" checked><span>{{ d }}</span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="habito-meta">Meta por día</label>
+          <input id="habito-meta" type="number" name="meta" min="1" max="100" value="1" required>
+          <span class="campo-ayuda">1 = se tilda. Más = se cuenta.</span>
+        </div>
+        <div class="campo">
+          <label for="habito-unidad">Unidad (opcional)</label>
+          <input id="habito-unidad" type="text" name="unidad" maxlength="20" placeholder="Ej. vasos, min">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="habito-desde">Cuenta desde</label>
+        <input id="habito-desde" type="date" name="desde" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}">
+      </div>
+      <div class="panel-acciones">
+        <button type="submit" class="btn-primary" data-guardar>Agregar</button>
+        <button type="button" class="btn-secondary" data-panel-cerrar data-solo-edicion hidden>Cancelar</button>
+        <button type="submit" class="btn-secondary" formnovalidate data-solo-edicion data-url="url_archivar" data-texto="texto_archivar" hidden>Archivar</button>
+        <button type="submit" class="btn-texto-peligro" formnovalidate data-solo-edicion data-url="url_eliminar"
+                data-confirmar="¿Eliminar este hábito y todo su historial? Si solo querés dejar de hacerlo, mejor archivalo." hidden>Eliminar</button>
+      </div>
+    </form>
+  </aside>
+</div>
+{% endblock %}

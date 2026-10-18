@@ -2151,7 +2151,7 @@ table,
 
 /* --- Botones con degradé y brillo --- */
 
-button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not([role="tab"]),
+button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not(.habito-check):not(.tarea-texto):not([role="tab"]),
 .boton-primario {
   background: var(--button-bg);
   background-size: 160% 160%;
@@ -2159,7 +2159,7 @@ button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro
   transition: background-position 0.4s ease, box-shadow 0.25s ease, transform 0.15s ease;
 }
 
-button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not([role="tab"]):hover,
+button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not(.habito-check):not(.tarea-texto):not([role="tab"]):hover,
 .boton-primario:hover {
   filter: none;
   background-position: 100% 50%;
@@ -3097,7 +3097,8 @@ code {
 
 /* Lista (carrusel) + panel de edición lado a lado, los dos a toda altura. */
 @media (min-width: 1101px) {
-  .panel-pestana > .config-split {
+  .panel-pestana > .config-split,
+  .app-main > .config-split.llenar {
     flex: 1 1 0;
     min-height: 0;
     flex-wrap: nowrap;
@@ -3309,4 +3310,358 @@ code {
 
 .sidebar-seccion > .sidebar-link {
   min-height: 38px;
+}
+
+/* --- Rutina: hábitos --- */
+
+textarea {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--baseline);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  resize: vertical;
+}
+
+.checklist-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.checklist {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 8px;
+}
+
+.habito-fila,
+.tarea-fila {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 18px;
+  border-top: 1px solid var(--gridline);
+}
+
+.carrusel .habito-fila,
+.carrusel .tarea-fila {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.config-lista .tarea-fila {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.habito-form {
+  display: contents;
+}
+
+/* El círculo para tildar (hábitos y tareas). */
+button.habito-check {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 2px solid var(--baseline);
+  border-radius: 999px;
+  background: transparent;
+  color: transparent;
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
+}
+
+button.habito-check span {
+  color: var(--text-secondary);
+}
+
+button.habito-check:hover {
+  filter: none;
+  border-color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+button.habito-check[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--neon-gradient, var(--accent));
+  color: #fff;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: tildar 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+button.habito-check:disabled {
+  opacity: 0.6;
+}
+
+@keyframes tildar {
+  from { transform: scale(0.7); }
+}
+
+.tarea-check {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.habito-texto,
+.tarea-texto {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+button.tarea-texto {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 400;
+  text-align: left;
+}
+
+button.tarea-texto:hover {
+  filter: none;
+}
+
+.tarea-fila:has(.tarea-texto[aria-current="true"]) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.habito-texto strong,
+.tarea-texto strong {
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.habito-hecho .habito-texto strong,
+.tarea-hecha .tarea-texto strong {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--text-muted) 60%, transparent);
+}
+
+.habito-progreso {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.habito-progreso .barra-pista {
+  flex: 0 1 140px;
+  height: 6px;
+}
+
+.habito-progreso .barra-relleno {
+  display: block;
+  height: 6px;
+}
+
+.habito-racha {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.boton-icono.deshabilitado {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* Semana: una fila por hábito, una columna por día. */
+.tabla-semana th,
+.tabla-semana td {
+  text-align: center;
+  padding: 6px 4px;
+}
+
+.tabla-semana th:first-child,
+.tabla-semana td:first-child {
+  text-align: left;
+  padding-left: 12px;
+}
+
+.tabla-semana th a {
+  color: inherit;
+  text-decoration: none;
+  line-height: 1.2;
+}
+
+.tabla-semana .col-hoy {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.tabla-semana th.col-elegida a {
+  color: var(--accent-text);
+}
+
+.punto {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.punto-hecho {
+  background: var(--neon-gradient, var(--accent));
+  color: #fff;
+}
+
+.punto-fallado {
+  color: var(--negative);
+  background: color-mix(in srgb, var(--negative) 12%, transparent);
+}
+
+.punto-pendiente {
+  border: 2px dashed var(--baseline);
+}
+
+.punto-futuro {
+  border: 1px solid var(--gridline);
+}
+
+.punto-no-aplica {
+  color: var(--text-muted);
+}
+
+/* Calendario del mes, coloreado según el % de hábitos cumplidos. */
+.calendario {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: auto;
+  grid-auto-rows: minmax(32px, 1fr);
+  gap: 6px;
+  min-height: 0;
+}
+
+.calendario-dia-semana {
+  align-self: end;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.calendario-celda {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  text-decoration: none;
+  background: var(--gridline);
+  transition: transform 0.15s ease;
+}
+
+a.calendario-celda:hover {
+  color: var(--text-primary);
+  transform: scale(1.06);
+}
+
+.calendario-celda.futuro {
+  background: transparent;
+  border: 1px dashed var(--gridline);
+  color: var(--text-muted);
+}
+
+.calendario-celda.sin-datos { color: var(--text-muted); }
+.calendario-celda.nivel-0 { background: color-mix(in srgb, var(--negative) 14%, var(--gridline)); }
+.calendario-celda.nivel-1 { background: color-mix(in srgb, var(--accent) 22%, var(--gridline)); }
+.calendario-celda.nivel-2 { background: color-mix(in srgb, var(--accent) 42%, var(--gridline)); }
+.calendario-celda.nivel-3 { background: color-mix(in srgb, var(--accent) 65%, var(--gridline)); }
+.calendario-celda.nivel-4 { background: var(--neon-gradient, var(--accent)); color: #fff; font-weight: 700; }
+
+.calendario-elegido {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Gestionar hábitos: días de la semana como botones. */
+.selector-dias {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.selector-dias label {
+  cursor: pointer;
+}
+
+.selector-dias input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.selector-dias span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--baseline);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.selector-dias input:checked + span {
+  border-color: transparent;
+  background: var(--button-bg);
+  color: #fff;
+}
+
+.selector-dias input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.campos-nombre {
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+}
+
+.campo-icono input {
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+.fechas-rapidas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.fechas-rapidas .filtro {
+  min-height: 28px;
+  padding: 0 10px;
+}
+
+.carrusel-titulo[hidden],
+.carrusel-pestanas[hidden] {
+  display: none;
 }

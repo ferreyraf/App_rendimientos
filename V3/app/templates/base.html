@@ -22,6 +22,8 @@
 <body>
 {%- set iconos = {
   "hoy": '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>',
+  "habitos": '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16.5 9.5"/>',
+  "tareas": '<path d="M10 6h10M10 12h10M10 18h10"/><path d="M3.5 6l1.3 1.3L7 5M3.5 12l1.3 1.3L7 11M3.5 18l1.3 1.3L7 17"/>',
   "dashboard": '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
   "graficos": '<path d="M4 20V11M10 20V5M16 20v-7M21 20H3"/>',
   "proyeccion": '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
@@ -36,6 +38,10 @@
 {#- Secciones del menú: cada una se pliega; la de la página actual queda
     abierta. Las secciones nuevas (Rutina, Entrenamiento) se suman acá. #}
 {%- set secciones = [
+  {"id": "rutina", "titulo": "Rutina", "blueprint": "rutina", "enlaces": [
+    ("rutina.habitos", "Hábitos", "habitos"),
+    ("rutina.tareas", "Tareas", "tareas"),
+  ]},
   {"id": "finanzas", "titulo": "Finanzas", "enlaces": [
     ("main.dashboard", "Resumen", "dashboard"),
     ("main.este_mes", "Este mes", "mes"),
@@ -48,7 +54,8 @@
   ]},
 ] %}
 {%- macro enlace(endpoint, texto, icono) -%}
-  <a class="sidebar-link" href="{{ url_for(endpoint) }}" {{ 'aria-current="page"'|safe if request.endpoint == endpoint }}>
+  {%- set actual = request.endpoint or "" %}
+  <a class="sidebar-link" href="{{ url_for(endpoint) }}" {{ 'aria-current="page"'|safe if actual == endpoint or actual.startswith(endpoint ~ "_") }}>
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ iconos[icono]|safe }}</svg>
     {{ texto }}
   </a>
@@ -68,7 +75,7 @@
       {{ enlace("hoy.inicio", "Hoy", "hoy") }}
 
       {% for sec in secciones %}
-        {% set activa = request.endpoint in sec.enlaces|map(attribute=0)|list %}
+        {% set activa = request.endpoint in sec.enlaces|map(attribute=0)|list or (sec.blueprint and request.blueprint == sec.blueprint) %}
         <details class="sidebar-seccion" data-seccion="{{ sec.id }}" {{ "open" if activa }} {{ "data-activa" if activa }}>
           <summary class="sidebar-group">
             {{ sec.titulo }}

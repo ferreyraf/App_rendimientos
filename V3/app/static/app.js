@@ -45,6 +45,12 @@
   }
 
   function setupConfirmDelete() {
+    // Botones con su propio texto de confirmación (data-confirmar).
+    document.addEventListener("click", function (event) {
+      var btn = event.target.closest("[data-confirmar]");
+      if (btn && !window.confirm(btn.dataset.confirmar)) event.preventDefault();
+    });
+
     document.querySelectorAll('button[formaction*="eliminar"]').forEach(function (btn) {
       btn.addEventListener("click", function (event) {
         if (!window.confirm("¿Confirmás que querés eliminar este registro?")) {
@@ -128,9 +134,10 @@
       siguiente.textContent = "›";
       controles.append(anterior, contador, siguiente);
 
-      if (modo === "pestanas") cabecera.append(pestanas);
+      if (modo === "pestanas") cabecera.append(pestanas, titulo);
       else if (modo === "compacto") cabecera.append(titulo);
       cabecera.append(controles);
+      titulo.hidden = modo === "pestanas";
       carrusel.classList.add("carrusel-modo-" + modo);
       carrusel.insertBefore(cabecera, cuerpo);
 
@@ -219,12 +226,25 @@
       carrusel.addEventListener("carrusel:actualizar", function () {
         if (modo === "pestanas") armarPestanas();
         mostrar(actual);
+        ajustarPestanas();
       });
       // Otro script puede pedir ir a un panel: el evento lleva su título.
       carrusel.addEventListener("carrusel:ir", function (e) {
         var destino = todos.filter(function (s) { return s.dataset.titulo === e.detail; })[0];
         if (destino) mostrar(destino);
       });
+
+      // Si las pestañas no entran en una línea, se muestra solo el título
+      // del panel actual con las flechas (y vuelve a pestañas si hay lugar).
+      function ajustarPestanas() {
+        if (modo !== "pestanas") return;
+        pestanas.hidden = false;
+        titulo.hidden = true;
+        var tabs = pestanas.children;
+        var desborda = tabs.length > 1 && tabs[tabs.length - 1].offsetTop > tabs[0].offsetTop;
+        pestanas.hidden = desborda;
+        titulo.hidden = !desborda;
+      }
 
       if (modo === "pestanas") armarPestanas();
       carrusel.classList.add("carrusel-listo");
@@ -234,6 +254,8 @@
         return guardado !== null && s.dataset.titulo === guardado;
       })[0] || todos.filter(function (s) { return s.hasAttribute("data-inicial"); })[0] || todos[0];
       mostrar(inicial);
+      ajustarPestanas();
+      if (window.ResizeObserver) new ResizeObserver(ajustarPestanas).observe(cabecera);
 
       if (modo === "ticker" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         var pausado = false;
@@ -243,6 +265,111 @@
         carrusel.addEventListener("focusout", function () { pausado = false; });
         setInterval(function () { if (!pausado) mover(1); }, ROTACION_TICKER_MS);
       }
+    });
+  }
+
+  // Formularios rápidos (tildar un hábito, completar una tarea): se envían
+  // sin recargar y se reemplazan solo las zonas marcadas con
+  // data-refrescable (por id) con su versión nueva, tomada de la página a la
+  // que redirige el servidor. Sin JS funcionan igual, con una recarga.
+  function setupFormulariosRapidos() {
+    document.addEventListener("submit", function (e) {
+      var form = e.target;
+      if (!form.matches || !form.matches("form[data-rapido]")) return;
+      e.preventDefault();
+      var datos = new FormData(form);
+      if (e.submitter && e.submitter.name) datos.append(e.submitter.name, e.submitter.value);
+      var botones = form.querySelectorAll("button");
+      botones.forEach(function (b) { b.disabled = true; });
+      fetch(form.action, { method: "POST", body: datos })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          var nueva = new DOMParser().parseFromString(html, "text/html");
+          document.querySelectorAll("[data-refrescable]").forEach(function (zona) {
+            var reemplazo = nueva.getElementById(zona.id);
+            if (reemplazo) zona.innerHTML = reemplazo.innerHTML;
+          });
+          var avisos = nueva.querySelector(".flash-list");
+          if (avisos) {
+            var viejos = document.querySelector(".flash-list");
+            if (viejos) viejos.remove();
+            document.body.append(avisos);
+            setupFlashes();
+          }
+          botones.forEach(function (b) { b.disabled = false; });
+        })
+        .catch(function () { form.submit(); });
+    });
+  }
+
+  // Panel de edición genérico (lista + formulario al costado): un clic en
+  // una fila [data-editar] con data-panel="<id del panel>" carga sus datos
+  // ({titulo, url_editar, campos: {name: valor}, ...}) en el formulario.
+  // Los botones [data-solo-edicion] aparecen solo al editar; los que tienen
+  // data-url="clave" envían a esa URL de los datos, y data-texto="clave"
+  // toma su texto de ahí.
+  function setupPanelesEdicion() {
+    document.querySelectorAll("[data-panel-edicion]").forEach(function (panel) {
+      var form = panel.querySelector("form");
+      var urlNueva = form.getAttribute("action");
+      var modo = panel.querySelector("[data-panel-modo]");
+      var titulo = panel.querySelector("[data-panel-titulo]");
+      var guardar = panel.querySelector("[data-guardar]");
+      var textos = { modo: modo.textContent, titulo: titulo.textContent, guardar: guardar.textContent };
+      var filaActual = null;
+
+      function marcar(fila) {
+        if (filaActual) filaActual.removeAttribute("aria-current");
+        filaActual = fila;
+        if (fila) fila.setAttribute("aria-current", "true");
+      }
+
+      function poner(nombre, valor) {
+        form.querySelectorAll('[name="' + nombre + '"]').forEach(function (campo) {
+          if (campo.type === "checkbox" && Array.isArray(valor)) {
+            campo.checked = valor.map(String).indexOf(campo.value) !== -1;
+          } else if (campo.type === "checkbox") {
+            campo.checked = !!valor;
+          } else if (campo.type === "radio") {
+            campo.checked = String(valor) === campo.value;
+          } else {
+            campo.value = valor === null || valor === undefined ? "" : valor;
+          }
+        });
+      }
+
+      function nuevo() {
+        form.reset();
+        form.action = urlNueva;
+        modo.textContent = textos.modo;
+        titulo.textContent = textos.titulo;
+        guardar.textContent = textos.guardar;
+        panel.querySelectorAll("[data-solo-edicion]").forEach(function (el) { el.hidden = true; });
+        marcar(null);
+      }
+
+      function editar(datos, fila) {
+        form.reset();
+        form.action = datos.url_editar;
+        modo.textContent = "Editando";
+        titulo.textContent = datos.titulo;
+        guardar.textContent = "Guardar cambios";
+        Object.keys(datos.campos || {}).forEach(function (n) { poner(n, datos.campos[n]); });
+        panel.querySelectorAll("[data-solo-edicion]").forEach(function (el) {
+          el.hidden = false;
+          if (el.dataset.url) el.formAction = datos[el.dataset.url];
+          if (el.dataset.texto) el.textContent = datos[el.dataset.texto];
+        });
+        marcar(fila);
+        var primero = form.querySelector("input:not([type=hidden]):not([type=checkbox]), textarea");
+        if (primero) primero.focus();
+      }
+
+      document.addEventListener("click", function (e) {
+        var fila = e.target.closest('[data-editar][data-panel="' + panel.id + '"]');
+        if (fila) editar(JSON.parse(fila.dataset.editar), fila);
+      });
+      panel.querySelectorAll("[data-panel-cerrar]").forEach(function (b) { b.addEventListener("click", nuevo); });
     });
   }
 
@@ -292,6 +419,8 @@
     setupThemeToggle();
     setupNavToggle();
     setupSeccionesMenu();
+    setupFormulariosRapidos();
+    setupPanelesEdicion();
     setupFlashes();
     setupConfirmDelete();
     setupCarruseles();

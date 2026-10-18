@@ -1,0 +1,33 @@
+{# Lista de tareas con su casilla para completar. Usa: tareas, hoy, volver,
+   fecha_corta, vacio y editable (en Tareas, un clic en la fila la edita). #}
+{% for t in tareas %}
+  <div class="tarea-fila {{ 'tarea-hecha' if not t.pendiente }}">
+    <form method="post" action="{{ url_for('rutina.completar_tarea', tarea_id=t.id) }}" data-rapido>
+      <input type="hidden" name="volver" value="{{ volver }}">
+      <button type="submit" class="habito-check tarea-check" aria-pressed="{{ 'false' if t.pendiente else 'true' }}"
+              aria-label="{{ 'Completar' if t.pendiente else 'Volver a pendiente' }}: {{ t.titulo }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      </button>
+    </form>
+    {% set detalle %}
+      {%- if t.fecha %}<span class="{{ 'negativo' if t.atrasada(hoy) }}">{{ fecha_corta(t.fecha, hoy) }}{{ ' · atrasada' if t.atrasada(hoy) }}</span>{% endif -%}
+      {%- if t.fecha and t.notas %} · {% endif -%}
+      {%- if t.notas %}{{ t.notas|truncate(70) }}{% endif -%}
+      {%- if t.hecha %}{{ ' · ' if t.fecha or t.notas }}hecha {{ fecha_corta(t.hecha.date(), hoy)|lower }}{% endif -%}
+    {% endset %}
+    {% if editable %}
+      <button type="button" class="tarea-texto" data-editar='{{ edicion[t.id] }}' data-panel="panel-tarea">
+        <strong>{{ t.titulo }}</strong>
+        {% if detalle|trim %}<span class="fila-config-detalle">{{ detalle }}</span>{% endif %}
+      </button>
+    {% else %}
+      <span class="tarea-texto">
+        <strong>{{ t.titulo }}</strong>
+        {% if detalle|trim %}<span class="fila-config-detalle">{{ detalle }}</span>{% endif %}
+      </span>
+    {% endif %}
+    {% if t.prioridad == 2 and t.pendiente %}<span class="badge badge-warning">Alta</span>{% endif %}
+  </div>
+{% else %}
+  <p class="vacio lista-vacia">{{ vacio }}</p>
+{% endfor %}
