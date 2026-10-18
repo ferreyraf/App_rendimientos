@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Rutinas y ejercicios</h1>
+    <p class="subtitle">Armá tus rutinas (qué ejercicios, cuántas series y repeticiones, qué días) y tu lista de ejercicios.</p>
+  </div>
+  <a class="boton boton-secundario" href="{{ url_for('entrenamiento.gimnasio') }}">‹ Volver al Gimnasio</a>
+</header>
+
+{% macro opciones(seleccionado) %}
+  <option value="">Elegí un ejercicio…</option>
+  {% for grupo, items in activos|groupby('grupo') %}
+    <optgroup label="{{ grupo or 'Sin grupo' }}">
+      {% for e in items %}<option value="{{ e.id }}" {{ 'selected' if e.id == seleccionado }}>{{ e.nombre }}</option>{% endfor %}
+    </optgroup>
+  {% endfor %}
+  {% if seleccionado and seleccionado not in activos|map(attribute='id')|list %}
+    <option value="{{ seleccionado }}" selected>{{ nombres.get(seleccionado, 'Ejercicio') }} (archivado)</option>
+  {% endif %}
+{% endmacro %}
+
+<div class="config-split llenar">
+  <section class="config-lista carrusel" data-carrusel="rutinas-gym" aria-label="Rutinas y ejercicios">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="Rutinas">
+        {% for r in rutinas %}
+          <a class="fila-config" href="{{ url_for('entrenamiento.rutinas', editar=r.id) }}" {{ 'aria-current="true"'|safe if editando and editando.id == r.id }}>
+            <span class="fila-config-principal">
+              <strong>{{ r.nombre }}</strong>
+              <span class="fila-config-detalle">{{ r['items']|map(attribute='ejercicio_id')|map('extraer', nombres)|join(', ') }}</span>
+            </span>
+            <span class="fila-config-aumento">{{ r.cuando }}</span>
+            <span class="fila-config-monto">{{ r['items']|length }} ej.</span>
+          </a>
+        {% else %}
+          <p class="vacio lista-vacia">
+            Todavía no tenés rutinas. {% if not activos %}Primero cargá ejercicios (pestaña Ejercicios) y después{% else %}Creá la primera con el formulario:{% endif %}
+            por ejemplo "Día A: pecho y tríceps" los lunes y jueves.
+          </p>
+        {% endfor %}
+      </div>
+
+      <div class="carrusel-slide" data-titulo="Ejercicios" id="ejercicios">
+        <form method="post" action="{{ url_for('entrenamiento.crear_ejercicio') }}" class="ejercicio-nuevo">
+          <input type="text" name="nombre" maxlength="60" required placeholder="Nuevo ejercicio" aria-label="Nombre del ejercicio nuevo">
+          <select name="grupo" aria-label="Grupo muscular">
+            <option value="">Grupo…</option>
+            {% for g in grupos %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+          </select>
+          <button type="submit">Agregar</button>
+        </form>
+        {% if ejercicios|length < 5 %}
+          <form method="post" action="{{ url_for('entrenamiento.cargar_comunes') }}" class="ejercicio-comunes">
+            <span class="subtitle">¿Arrancás de cero?</span>
+            <button type="submit" class="btn-secondary">Cargar los 18 ejercicios más comunes</button>
+          </form>
+        {% endif %}
+        {% for e in ejercicios %}
+          <form method="post" action="{{ url_for('entrenamiento.editar_ejercicio', ejercicio_id=e.id) }}" class="ejercicio-fila {{ 'row-inactiva' if not e.activo }}">
+            <input type="text" name="nombre" value="{{ e.nombre }}" maxlength="60" required aria-label="Nombre">
+            <select name="grupo" aria-label="Grupo muscular de {{ e.nombre }}">
+              <option value="">Sin grupo</option>
+              {% for g in grupos %}<option value="{{ g }}" {{ 'selected' if g == e.grupo }}>{{ g }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn-secondary">Guardar</button>
+            <button type="submit" class="btn-texto-peligro" formaction="{{ url_for('entrenamiento.eliminar_ejercicio', ejercicio_id=e.id) }}" formnovalidate
+                    {% if e.activo %}data-confirmar="¿Eliminar {{ e.nombre }}? Si ya lo usaste, se archiva en vez de borrarse."{% endif %}>{{ 'Eliminar' if e.activo else 'Reactivar' }}</button>
+          </form>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel-edicion" aria-labelledby="panel-rutina-titulo">
+    <div class="panel-cabecera">
+      <div>
+        <span class="panel-modo">{{ "Editando" if editando else "Nueva rutina" }}</span>
+        <h2 id="panel-rutina-titulo">{{ editando.nombre if editando else "Armar rutina" }}</h2>
+      </div>
+      {% if editando %}<a class="btn-icono" href="{{ url_for('entrenamiento.rutinas') }}" aria-label="Cerrar y armar una nueva">×</a>{% endif %}
+    </div>
+    <form method="post" action="{{ url_for('entrenamiento.editar_rutina', rutina_id=editando.id) if editando else url_for('entrenamiento.crear_rutina') }}" class="panel-form" id="form-rutina">
+      <div class="campo">
+        <label for="rutina-nombre">Nombre</label>
+        <input id="rutina-nombre" type="text" name="nombre" maxlength="60" required value="{{ editando.nombre if editando else '' }}" placeholder="Ej. Día A: pecho y tríceps">
+      </div>
+      <fieldset class="panel-grupo">
+        <legend>Qué días toca <span class="campo-ayuda">(ninguno = cuando quieras)</span></legend>
+        <div class="selector-dias">
+          {% for d in dias_cortos %}
+            <label><input type="checkbox" name="dias" value="{{ loop.index0 }}" {{ 'checked' if editando and loop.index0 in editando.dias }}><span>{{ d }}</span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <div class="campo">
+        <span class="campo-etiqueta">Ejercicios <span class="campo-ayuda">(series × repeticiones objetivo)</span></span>
+        <div class="rutina-items" id="rutina-items">
+          {% for it in (editando['items'] if editando else [{"ejercicio_id": None, "series": 3, "reps": 10}]) %}
+            <div class="rutina-item">
+              <select name="ejercicio_id" aria-label="Ejercicio">{{ opciones(it.ejercicio_id) }}</select>
+              <input type="number" name="series" min="1" max="20" value="{{ it.series }}" aria-label="Series">
+              <span class="muted">×</span>
+              <input type="number" name="reps" min="1" max="100" value="{{ it.reps }}" aria-label="Repeticiones">
+              <button type="button" class="btn-icono" data-quitar-item aria-label="Quitar ejercicio">×</button>
+            </div>
+          {% endfor %}
+        </div>
+        <button type="button" class="btn-secondary" id="agregar-item" {{ 'disabled' if not activos }}>+ Ejercicio</button>
+      </div>
+      <div class="panel-acciones">
+        <button type="submit" class="btn-primary" {{ 'disabled' if not activos }}>{{ "Guardar cambios" if editando else "Crear rutina" }}</button>
+        {% if editando %}
+          <a class="btn-secondary boton" href="{{ url_for('entrenamiento.rutinas') }}">Cancelar</a>
+          <button type="submit" class="btn-texto-peligro" formnovalidate formaction="{{ url_for('entrenamiento.eliminar_rutina', rutina_id=editando.id) }}"
+                  data-confirmar="¿Eliminar la rutina {{ editando.nombre }}? Los entrenamientos ya hechos quedan en el historial.">Eliminar</button>
+        {% endif %}
+      </div>
+    </form>
+    <template id="rutina-item-plantilla">
+      <div class="rutina-item">
+        <select name="ejercicio_id" aria-label="Ejercicio">{{ opciones(None) }}</select>
+        <input type="number" name="series" min="1" max="20" value="3" aria-label="Series">
+        <span class="muted">×</span>
+        <input type="number" name="reps" min="1" max="100" value="10" aria-label="Repeticiones">
+        <button type="button" class="btn-icono" data-quitar-item aria-label="Quitar ejercicio">×</button>
+      </div>
+    </template>
+  </aside>
+</div>
+
+<script>
+  (function () {
+    const lista = document.getElementById('rutina-items');
+    document.getElementById('agregar-item').addEventListener('click', () => {
+      lista.appendChild(document.getElementById('rutina-item-plantilla').content.cloneNode(true));
+      lista.lastElementChild.querySelector('select').focus();
+    });
+    lista.addEventListener('click', (e) => {
+      const quitar = e.target.closest('[data-quitar-item]');
+      if (quitar && lista.children.length > 1) quitar.closest('.rutina-item').remove();
+    });
+    // Si se llega con #ejercicios, mostrar esa pestaña.
+    // (en "load": los carruseles se arman al terminar de cargar la página).
+    const irAEjercicios = () => {
+      if (location.hash === '#ejercicios') {
+        document.querySelector('[data-carrusel="rutinas-gym"]').dispatchEvent(new CustomEvent('carrusel:ir', { detail: 'Ejercicios' }));
+      }
+    };
+    window.addEventListener('load', irAEjercicios);
+    window.addEventListener('hashchange', irAEjercicios);
+  })();
+</script>
+{% endblock %}

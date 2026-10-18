@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Gimnasio</h1>
+    <p class="subtitle">Anotá cada serie cuando la terminás: el peso de la vez pasada ya viene cargado.</p>
+  </div>
+  <a class="boton boton-secundario" href="{{ url_for('entrenamiento.rutinas') }}">Rutinas y ejercicios</a>
+</header>
+
+<section class="kpi-row" id="gym-indicadores" data-refrescable aria-label="Tu semana">
+  <div class="stat-tile">
+    <p class="stat-label">Esta semana</p>
+    <p class="stat-value">{{ sesiones_semana }} entrenamiento{{ 's' if sesiones_semana != 1 }}</p>
+    <p class="stat-note">desde el lunes</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Volumen de la semana</p>
+    <p class="stat-value">{{ kg(volumen_semana, 0) }} kg</p>
+    <p class="stat-note">peso × repeticiones</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Último entrenamiento</p>
+    <p class="stat-value">{{ fecha_corta(ultima.fecha, hoy) if ultima else '—' }}</p>
+    <p class="stat-note">{{ ultima.nombre if ultima else 'Todavía no entrenaste' }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Récords (30 días)</p>
+    <p class="stat-value {{ 'positivo' if records_30 }}">{{ '🏆 ' if records_30 }}{{ records_30 }}</p>
+    <p class="stat-note">ejercicios en los que mejoraste</p>
+  </div>
+</section>
+
+<div class="fila-llena llenar gym-fila">
+  <section class="lista-card lista-llena sesion-card" id="gym-sesion" data-refrescable aria-label="Entrenamiento">
+    {% if en_curso %}
+      <div class="lista-card-titulo">
+        <h2>🏋️ {{ en_curso.nombre }}</h2>
+        <span class="subtitle">desde las {{ en_curso.inicio.strftime("%H:%M") }} · {{ en_curso.series_hechas }} serie{{ 's' if en_curso.series_hechas != 1 }} hecha{{ 's' if en_curso.series_hechas != 1 }} · {{ kg(en_curso.volumen, 0) }} kg</span>
+      </div>
+      <div class="sesion-cuerpo">
+        {% for b in bloques_sesion %}
+          <div class="sesion-ejercicio">
+            <div class="sesion-ejercicio-titulo">
+              <strong>{{ b.ejercicio.nombre if b.ejercicio else 'Ejercicio' }}</strong>
+              <span class="fila-config-detalle">
+                {% if b.objetivo %}Objetivo {{ b.objetivo }}{% endif %}{% if b.objetivo and b.antes %} · {% endif %}
+                {% if b.antes %}La vez pasada: {{ b.antes }}{% elif not b.objetivo %}Primera vez{% endif %}
+              </span>
+            </div>
+            {% for it in b.series %}
+              {% set s = it.s %}
+              <div class="serie-fila {{ 'serie-hecha' if s.hecha }}">
+                <span class="serie-numero">{{ loop.index }}</span>
+                <form method="post" action="{{ url_for('entrenamiento.anotar_serie', serie_id=s.id) }}" data-rapido class="serie-form">
+                  <input type="hidden" name="volver" value="{{ volver }}">
+                  <button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+                  <label class="visualmente-oculto" for="peso-{{ s.id }}">Peso de la serie {{ loop.index }}</label>
+                  <input id="peso-{{ s.id }}" type="number" name="peso" step="0.5" min="0" max="1000" value="{{ '%g'|format(s.peso) }}" inputmode="decimal">
+                  <span class="muted">kg ×</span>
+                  <label class="visualmente-oculto" for="reps-{{ s.id }}">Repeticiones de la serie {{ loop.index }}</label>
+                  <input id="reps-{{ s.id }}" type="number" name="reps" step="1" min="0" max="1000" value="{{ s.reps }}" inputmode="numeric">
+                  <button type="submit" class="habito-check" {% if s.hecha %}name="deshacer" value="1"{% endif %}
+                          aria-pressed="{{ 'true' if s.hecha else 'false' }}" aria-label="{{ 'Volver a pendiente' if s.hecha else 'Marcar hecha' }} la serie {{ loop.index }}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                  </button>
+                </form>
+                {% if it.record %}<span class="serie-record" title="Récord: tu mejor serie en este ejercicio">🏆</span>{% endif %}
+                <form method="post" action="{{ url_for('entrenamiento.eliminar_serie', serie_id=s.id) }}" data-rapido>
+                  <input type="hidden" name="volver" value="{{ volver }}">
+                  <button type="submit" class="btn-icono" aria-label="Quitar la serie {{ loop.index }}">×</button>
+                </form>
+              </div>
+            {% endfor %}
+            <form method="post" action="{{ url_for('entrenamiento.agregar_serie', sesion_id=en_curso.id) }}" data-rapido class="serie-agregar">
+              <input type="hidden" name="volver" value="{{ volver }}">
+              <input type="hidden" name="ejercicio_id" value="{{ b.ejercicio.id if b.ejercicio else '' }}">
+              <button type="submit" class="btn-secondary">+ Serie</button>
+            </form>
+          </div>
+        {% else %}
+          <p class="vacio lista-vacia">Agregá el primer ejercicio con el selector de abajo.</p>
+        {% endfor %}
+
+        <form method="post" action="{{ url_for('entrenamiento.agregar_serie', sesion_id=en_curso.id) }}" data-rapido class="sesion-agregar-ejercicio">
+          <input type="hidden" name="volver" value="{{ volver }}">
+          <label class="visualmente-oculto" for="agregar-ejercicio">Agregar ejercicio</label>
+          <select id="agregar-ejercicio" name="ejercicio_id" required>
+            <option value="">Agregar ejercicio…</option>
+            {% for grupo, items in ejercicios|groupby('grupo') %}
+              <optgroup label="{{ grupo or 'Sin grupo' }}">
+                {% for e in items %}<option value="{{ e.id }}">{{ e.nombre }}</option>{% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn-secondary">Agregar</button>
+        </form>
+      </div>
+      <form method="post" action="{{ url_for('entrenamiento.terminar_sesion', sesion_id=en_curso.id) }}" class="sesion-pie">
+        <input type="text" name="notas" maxlength="500" placeholder="Nota (opcional): cómo te sentiste, molestias…" aria-label="Nota del entrenamiento">
+        <button type="submit" class="btn-primary">Terminar</button>
+        <button type="submit" class="btn-texto-peligro" formaction="{{ url_for('entrenamiento.eliminar_sesion', sesion_id=en_curso.id) }}" formnovalidate
+                data-confirmar="¿Descartar este entrenamiento? Se borran todas sus series.">Descartar</button>
+      </form>
+    {% else %}
+      <div class="lista-card-titulo">
+        <h2>¿Qué entrenás hoy?</h2>
+        <span class="subtitle">{{ hoy.strftime("%d/%m/%Y") }}</span>
+      </div>
+      <div class="sesion-cuerpo">
+        {% for r in rutinas|sort(attribute='toca_hoy', reverse=true) %}
+          <div class="rutina-opcion {{ 'rutina-hoy' if r.toca_hoy }}">
+            <span class="fila-config-principal">
+              <strong>{{ r.nombre }} {% if r.toca_hoy %}<span class="badge badge-actual">toca hoy</span>{% endif %}</strong>
+              <span class="fila-config-detalle">{{ r.cuando }} · {{ r['items']|map(attribute='ejercicio_id')|map('extraer', nombres)|join(', ') }}</span>
+            </span>
+            <form method="post" action="{{ url_for('entrenamiento.empezar_sesion') }}">
+              <input type="hidden" name="rutina_id" value="{{ r.id }}">
+              <button type="submit" class="{{ 'btn-primary' if r.toca_hoy else 'btn-secondary' }}">Empezar</button>
+            </form>
+          </div>
+        {% else %}
+          <div class="vacio-panel">
+            <p>Todavía no tenés rutinas. <a href="{{ url_for('entrenamiento.rutinas') }}">Armá la primera</a> o empezá un entrenamiento libre.</p>
+          </div>
+        {% endfor %}
+      </div>
+      <form method="post" action="{{ url_for('entrenamiento.empezar_sesion') }}" class="sesion-pie">
+        <span class="subtitle">¿Algo distinto hoy?</span>
+        <button type="submit" class="btn-secondary">Entrenamiento libre</button>
+      </form>
+    {% endif %}
+  </section>
+
+  <section class="carrusel" data-carrusel="gimnasio" aria-label="Tu progreso">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="Progreso">
+        {% if graficos.progreso %}
+          <div class="slide-meta progreso-selector">
+            <label for="progreso-ejercicio">Ejercicio</label>
+            <select id="progreso-ejercicio">
+              {% for id, p in graficos.progreso.items() %}<option value="{{ id }}">{{ p.nombre }}</option>{% endfor %}
+            </select>
+            <span>Línea: 1RM estimado (compara series con distinto peso y reps) · puntos: peso máximo.</span>
+          </div>
+          <div class="grafico-caja"><canvas id="progresoChart" role="img" aria-label="Progreso del ejercicio elegido: 1RM estimado y peso máximo por entrenamiento"></canvas></div>
+        {% else %}
+          <div class="vacio-panel"><p>Cuando termines tu primer entrenamiento vas a ver acá cómo progresa cada ejercicio.</p></div>
+        {% endif %}
+      </div>
+      <div class="carrusel-slide" data-titulo="Volumen">
+        <p class="slide-meta">Kilos levantados por semana (peso × repeticiones), últimas 12 semanas.</p>
+        <div class="grafico-caja"><canvas id="volumenChart" role="img" aria-label="Volumen semanal en kilos"></canvas></div>
+      </div>
+      <div class="carrusel-slide" data-titulo="Historial">
+        {% for h in historial %}
+          <div class="historial-fila">
+            <span class="agenda-horario">{{ fecha_corta(h.s.fecha, hoy) }}</span>
+            <span class="fila-config-principal">
+              <strong>{{ h.s.nombre }}{% if h.records %} <span title="Récords: {{ h.records|join(', ') }}">🏆</span>{% endif %}</strong>
+              <span class="fila-config-detalle">
+                {{ h.s.series_hechas }} series · {{ kg(h.s.volumen, 0) }} kg{% if h.s.minutos is not none %} · {{ h.s.minutos }} min{% endif %}
+                · {{ h.s.ejercicios()|map('extraer', nombres)|join(', ') }}
+                {% if h.s.notas %} · “{{ h.s.notas }}”{% endif %}
+              </span>
+            </span>
+            <form method="post" action="{{ url_for('entrenamiento.eliminar_sesion', sesion_id=h.s.id) }}">
+              <button type="submit" class="btn-icono" data-confirmar="¿Eliminar este entrenamiento del historial?" aria-label="Eliminar entrenamiento del {{ h.s.fecha.strftime('%d/%m') }}">×</button>
+            </form>
+          </div>
+        {% else %}
+          <p class="vacio lista-vacia">Todavía no hay entrenamientos terminados.</p>
+        {% endfor %}
+      </div>
+      <div class="carrusel-slide" data-titulo="Récords">
+        <div class="table-scroll tabla-llena">
+          <table>
+            <thead><tr><th>Ejercicio</th><th class="num">Mejor peso</th><th class="num">1RM estimado</th><th class="num">Más reps</th></tr></thead>
+            <tbody>
+              {% for r in tabla_records %}
+                <tr>
+                  <td>{{ r.ejercicio.nombre }} <span class="muted">{{ r.ejercicio.grupo }}</span></td>
+                  {% if r.peso > 0 %}
+                    <td class="num">{{ kg(r.peso) }} kg <span class="muted">{{ fecha_corta(r.peso_fecha, hoy) }}</span></td>
+                    <td class="num">{{ kg(r.rm) }} kg <span class="muted">{{ fecha_corta(r.rm_fecha, hoy) }}</span></td>
+                  {% else %}
+                    <td class="num muted" colspan="2">Peso corporal</td>
+                  {% endif %}
+                  <td class="num">{{ r.reps }} <span class="muted">{{ fecha_corta(r.reps_fecha, hoy) }}</span></td>
+                </tr>
+              {% else %}
+                <tr><td colspan="4" class="vacio">Sin récords todavía.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  (function () {
+    const g = {{ graficos | tojson }};
+    const css = getComputedStyle(document.documentElement);
+    const token = (n) => css.getPropertyValue(n).trim();
+    const serie = token('--series-1');
+    const tinta = token('--text-secondary');
+    const grilla = token('--gridline');
+    const num = (v) => v.toLocaleString('es-AR', { maximumFractionDigits: 1 });
+    const ejes = (y) => ({
+      x: { ticks: { color: tinta, maxTicksLimit: 10 }, grid: { display: false } },
+      y: Object.assign({ ticks: { color: tinta, callback: (v) => num(v) + ' kg' }, grid: { color: grilla }, border: { display: false } }, y),
+    });
+
+    new Chart(document.getElementById('volumenChart'), {
+      type: 'bar',
+      data: { labels: g.semanas, datasets: [{ label: 'Volumen', data: g.volumen, backgroundColor: serie, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 28 }] },
+      options: {
+        maintainAspectRatio: false,
+        scales: ejes({ beginAtZero: true }),
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (i) => 'Semana del ' + i[0].label, label: (c) => num(c.parsed.y) + ' kg' } } },
+      },
+    });
+
+    const lienzo = document.getElementById('progresoChart');
+    if (!lienzo) return;
+    const selector = document.getElementById('progreso-ejercicio');
+    const chart = new Chart(lienzo, {
+      data: { labels: [], datasets: [
+        { type: 'line', label: '1RM estimado', data: [], borderColor: serie, backgroundColor: serie, borderWidth: 2, pointRadius: 0, pointHitRadius: 10, tension: 0.25 },
+        { type: 'line', label: 'Peso máximo', data: [], showLine: false, borderColor: 'transparent', backgroundColor: serie + '88', pointRadius: 4, pointHoverRadius: 6, pointHitRadius: 10 },
+      ] },
+      options: {
+        maintainAspectRatio: false,
+        scales: ejes({ grace: '8%' }),
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: tinta, boxWidth: 12, boxHeight: 2 } },
+          tooltip: { callbacks: { label: (c) => {
+            const p = g.progreso[selector.value].puntos[c.dataIndex];
+            return c.datasetIndex ? `Peso máximo: ${num(p.peso)} kg (hasta ${p.reps} reps)` : `1RM estimado: ${num(p.rm)} kg`;
+          } } },
+        },
+      },
+    });
+    const mostrar = () => {
+      const p = g.progreso[selector.value].puntos;
+      chart.data.labels = p.map((x) => x.fecha);
+      chart.data.datasets[0].data = p.map((x) => x.rm);
+      chart.data.datasets[1].data = p.map((x) => x.peso);
+      chart.update();
+    };
+    selector.addEventListener('change', mostrar);
+    mostrar();
+  })();
+</script>
+{% endblock %}

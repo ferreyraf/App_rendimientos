@@ -94,11 +94,6 @@ def aporte_finanzas(conn, ahora: datetime) -> AporteHoy:
                   f"+{formato_pesos(summary.rendimiento_generado, 0)} hoy" if summary else "",
                   url=url_for("main.dashboard")),
         Indicador(
-            "Próximo movimiento",
-            f"{proxima['wallet_name']} · {proxima['timestamp'].strftime('%H:%M')}" if proxima else "—",
-            f"en {proxima['horas']}h {proxima['minutos']}min" if proxima else "Ninguna billetera activa",
-        ),
-        Indicador(
             "Pagos de hoy",
             f"{len(pendientes)} pendiente{'s' if len(pendientes) != 1 else ''}" if pendientes else "Al día",
             f"{len(pagos) - len(pendientes)} ya marcado{'s' if len(pagos) - len(pendientes) != 1 else ''}" if pagos else "Nada para hoy",
@@ -120,6 +115,7 @@ def aporte_finanzas(conn, ahora: datetime) -> AporteHoy:
             panel("Capturas de hoy", "parciales/_capturas_hoy.html", summary=summary, ahora=ahora),
         ],
         alertas=_alertas(conn, capital_por_dia, hoy, egresos, ingresos),
+        chips=[f"💸 Rulo: pasar a {proxima['wallet_name']} a las {proxima['timestamp'].strftime('%H:%M')}"] if proxima else [],
     )
 
 
@@ -129,8 +125,14 @@ def aporte_rutina(conn, ahora: datetime) -> AporteHoy:
     return aporte_hoy(conn, ahora)
 
 
+def aporte_entrenamiento(conn, ahora: datetime) -> AporteHoy:
+    from .entrenamiento.rutas import aporte_hoy
+
+    return aporte_hoy(conn, ahora)
+
+
 # Orden en que las secciones aparecen en la pantalla.
-APORTES = [aporte_rutina, aporte_finanzas]
+APORTES = [aporte_rutina, aporte_entrenamiento, aporte_finanzas]
 
 
 @bp.route("/")

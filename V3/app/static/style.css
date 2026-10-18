@@ -4006,3 +4006,211 @@ button.agenda-bloque[aria-current="true"] {
 .agenda-fila.agenda-pasada {
   opacity: 0.5;
 }
+
+/* --- Entrenamiento --- */
+
+.gym-fila {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+}
+
+.sesion-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sesion-cuerpo {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 18px 10px;
+}
+
+.sesion-ejercicio {
+  padding: 10px 0 8px;
+  border-top: 1px solid var(--gridline);
+}
+
+.sesion-ejercicio-titulo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.serie-fila {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.serie-numero {
+  flex: 0 0 1.6rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.serie-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.serie-form input[type="number"] {
+  width: 4.6rem;
+  min-height: 34px;
+  padding: 0.25rem 0.45rem;
+  text-align: right;
+}
+
+.serie-hecha .serie-form input {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--baseline));
+  background: var(--accent-soft);
+}
+
+.serie-record {
+  font-size: 1rem;
+}
+
+.serie-agregar {
+  margin: 4px 0 0 2.1rem;
+}
+
+.serie-agregar .btn-secondary,
+.sesion-agregar-ejercicio .btn-secondary {
+  min-height: 30px;
+  padding: 0 0.8rem;
+}
+
+.sesion-agregar-ejercicio {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--gridline);
+}
+
+.sesion-agregar-ejercicio select {
+  flex: 1 1 auto;
+}
+
+.sesion-pie {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.sesion-pie input[type="text"] {
+  flex: 1 1 auto;
+}
+
+.sesion-pie .subtitle {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.rutina-opcion,
+.historial-fila {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--gridline);
+}
+
+.rutina-hoy strong {
+  color: var(--accent-text);
+}
+
+.progreso-selector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.progreso-selector select {
+  min-width: 12rem;
+}
+
+a.fila-config {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ejercicio-nuevo,
+.ejercicio-comunes,
+.ejercicio-fila {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+}
+
+.ejercicio-nuevo {
+  border-bottom: 1px solid var(--border);
+}
+
+.ejercicio-fila {
+  border-top: 1px solid var(--gridline);
+}
+
+.ejercicio-nuevo input,
+.ejercicio-fila input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ejercicio-fila .btn-secondary,
+.ejercicio-fila .btn-texto-peligro {
+  min-height: 32px;
+}
+
+.rutina-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.rutina-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rutina-item select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rutina-item input[type="number"] {
+  width: 3.6rem;
+  text-align: right;
+}
+
+.selector-cardio {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.selector-cardio label > span {
+  flex-direction: column;
+  width: 100%;
+  height: 56px;
+  gap: 1px;
+}
+
+.selector-cardio small {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.entreno-hoy {
+  flex-direction: column;
+  gap: 12px;
+}

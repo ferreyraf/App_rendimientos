@@ -728,10 +728,11 @@ def aporte_hoy(conn, ahora: datetime):
 
     del_dia = bloques_del_dia(datos.get_bloques(conn, usuario), hoy)
     actual, siguiente = estado_agenda(del_dia, ahora)
+    # Un solo chip: lo que estás haciendo o, si no hay nada, lo que viene.
     chips = []
     if actual:
         chips.append(f"Ahora: {actual.icono} {actual.titulo} hasta las {actual.fin}".replace("  ", " "))
-    if siguiente:
+    elif siguiente:
         chips.append(f"Después: {siguiente.icono} {siguiente.titulo} a las {siguiente.inicio}".replace("  ", " "))
 
     return AporteHoy(

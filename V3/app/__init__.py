@@ -21,11 +21,13 @@ def create_app():
 
     from .hoy import bp as bp_hoy
     from .routes import bp
+    from .entrenamiento.rutas import bp as bp_entrenamiento
     from .rutina.rutas import bp as bp_rutina
 
     app.register_blueprint(bp)
     app.register_blueprint(bp_hoy)
     app.register_blueprint(bp_rutina)
+    app.register_blueprint(bp_entrenamiento)
     _register_error_handlers(app)
     app.add_template_filter(formato_ar, "ar")
     app.add_template_filter(formato_pesos, "pesos")

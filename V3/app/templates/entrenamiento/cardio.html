@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Cardio</h1>
+    <p class="subtitle">Correr, caminar, bici, nadar… Con distancia y tiempo calcula el ritmo solo. Tocá una actividad para editarla.</p>
+  </div>
+</header>
+
+<section class="kpi-row" aria-label="Tu cardio">
+  <div class="stat-tile">
+    <p class="stat-label">Esta semana</p>
+    <p class="stat-value">{{ kg(km_semana, 1) }} km</p>
+    <p class="stat-note">{{ sesiones_semana }} actividad{{ 'es' if sesiones_semana != 1 }} · {{ minutos_semana }} min</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Este mes</p>
+    <p class="stat-value">{{ kg(km_mes, 1) }} km</p>
+    <p class="stat-note">desde el 1º</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Mejor ritmo corriendo</p>
+    <p class="stat-value">{{ formato_ritmo(mejor_ritmo) }}</p>
+    <p class="stat-note">últimos 30 días</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Total registrado</p>
+    <p class="stat-value">{{ historial|length }}</p>
+    <p class="stat-note">actividades</p>
+  </div>
+</section>
+
+<div class="config-split llenar">
+  <section class="config-lista carrusel" data-carrusel="cardio" aria-label="Tu cardio">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="Km por semana">
+        <p class="slide-meta">Kilómetros por semana (todas las actividades), últimas 12 semanas.</p>
+        <div class="grafico-caja"><canvas id="kmChart" role="img" aria-label="Kilómetros por semana"></canvas></div>
+      </div>
+      <div class="carrusel-slide" data-titulo="Ritmo">
+        {% if graficos.ritmo %}
+          <p class="slide-meta">Ritmo de cada salida a correr (minutos por kilómetro; más abajo es más rápido).</p>
+          <div class="grafico-caja"><canvas id="ritmoChart" role="img" aria-label="Ritmo de cada carrera en minutos por kilómetro"></canvas></div>
+        {% else %}
+          <div class="vacio-panel"><p>Cuando registres carreras con distancia vas a ver acá cómo mejora tu ritmo.</p></div>
+        {% endif %}
+      </div>
+      <div class="carrusel-slide" data-titulo="Historial">
+        {% for a in historial %}
+          <button type="button" class="fila-config" data-editar='{{ edicion[a.id] }}' data-panel="panel-cardio">
+            <span class="agenda-horario">{{ fecha_corta(a.fecha, hoy) }}</span>
+            <span class="fila-config-principal">
+              <strong>{{ a.emoji }} {{ a.nombre_tipo }}{% if a.distancia_km %} · {{ kg(a.distancia_km, 2) }} km{% endif %}</strong>
+              <span class="fila-config-detalle">
+                {{ formato_duracion(a.duracion_s) }}
+                {% if a.ritmo_s_km and a.tipo in ('correr', 'caminar') %} · {{ formato_ritmo(a.ritmo_s_km) }}{% elif a.velocidad_kmh %} · {{ kg(a.velocidad_kmh, 1) }} km/h{% endif %}
+                {% if a.fc_media %} · ♥ {{ a.fc_media }}{% endif %}
+                {% if a.notas %} · {{ a.notas }}{% endif %}
+              </span>
+            </span>
+          </button>
+        {% else %}
+          <p class="vacio lista-vacia">Todavía no registraste actividades.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel-edicion" id="panel-cardio" data-panel-edicion aria-labelledby="panel-cardio-titulo">
+    <div class="panel-cabecera">
+      <div>
+        <span class="panel-modo" data-panel-modo>Nueva actividad</span>
+        <h2 id="panel-cardio-titulo" data-panel-titulo>Registrar cardio</h2>
+      </div>
+      <button type="button" class="btn-icono" data-panel-cerrar data-solo-edicion aria-label="Cerrar y registrar otra" hidden>×</button>
+    </div>
+    <form method="post" action="{{ url_for('entrenamiento.crear_actividad') }}" class="panel-form">
+      <fieldset class="panel-grupo">
+        <legend>Qué hiciste</legend>
+        <div class="selector-animo selector-cardio">
+          {% for valor, (emoji, nombre) in tipos.items() %}
+            <label title="{{ nombre }}"><input type="radio" name="tipo" value="{{ valor }}" {{ 'checked' if loop.first }}><span><span class="emoji" aria-hidden="true">{{ emoji }}</span><small>{{ nombre }}</small></span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="cardio-distancia">Distancia (km)</label>
+          <input id="cardio-distancia" type="number" name="distancia_km" step="0.01" min="0" max="500" inputmode="decimal" placeholder="Ej. 5,2">
+        </div>
+        <div class="campo">
+          <label for="cardio-duracion">Duración</label>
+          <input id="cardio-duracion" type="text" name="duracion" required placeholder="45 o 45:30" inputmode="numeric" pattern="[0-9:]+">
+        </div>
+      </div>
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="cardio-fecha">Día</label>
+          <input id="cardio-fecha" type="date" name="fecha" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required>
+        </div>
+        <div class="campo">
+          <label for="cardio-fc">Pulsaciones prom.</label>
+          <input id="cardio-fc" type="number" name="fc_media" min="30" max="250" placeholder="Opcional">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="cardio-notas">Notas</label>
+        <input id="cardio-notas" type="text" name="notas" maxlength="200" placeholder="Opcional: recorrido, sensaciones…">
+      </div>
+      <div class="panel-acciones">
+        <button type="submit" class="btn-primary" data-guardar>Guardar</button>
+        <button type="button" class="btn-secondary" data-panel-cerrar data-solo-edicion hidden>Cancelar</button>
+        <button type="submit" class="btn-texto-peligro" formnovalidate data-solo-edicion data-url="url_eliminar" data-confirmar="¿Eliminar esta actividad?" hidden>Eliminar</button>
+      </div>
+    </form>
+  </aside>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  (function () {
+    const g = {{ graficos | tojson }};
+    const css = getComputedStyle(document.documentElement);
+    const token = (n) => css.getPropertyValue(n).trim();
+    const serie = token('--series-1');
+    const tinta = token('--text-secondary');
+    const grilla = token('--gridline');
+    const km = (v) => v.toLocaleString('es-AR', { maximumFractionDigits: 1 });
+    const ritmo = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+    const ejes = (y) => ({
+      x: { ticks: { color: tinta, maxTicksLimit: 12 }, grid: { display: false } },
+      y: Object.assign({ ticks: { color: tinta }, grid: { color: grilla }, border: { display: false } }, y),
+    });
+    new Chart(document.getElementById('kmChart'), {
+      type: 'bar',
+      data: { labels: g.semanas, datasets: [{ label: 'Kilómetros', data: g.km, backgroundColor: serie, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 28 }] },
+      options: {
+        maintainAspectRatio: false,
+        scales: ejes({ beginAtZero: true, ticks: { color: tinta, callback: (v) => km(v) + ' km' } }),
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (i) => 'Semana del ' + i[0].label, label: (c) => km(c.parsed.y) + ' km' } } },
+      },
+    });
+    const lienzo = document.getElementById('ritmoChart');
+    if (lienzo) new Chart(lienzo, {
+      type: 'line',
+      data: { labels: g.ritmo_fechas, datasets: [{ label: 'Ritmo', data: g.ritmo, borderColor: serie, backgroundColor: serie, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointHitRadius: 10, tension: 0.25 }] },
+      options: {
+        maintainAspectRatio: false,
+        scales: ejes({ grace: '10%', ticks: { color: tinta, callback: (v) => ritmo(v) + ' /km' } }),
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ritmo(c.parsed.y) + ' /km' } } },
+      },
+    });
+  })();
+</script>
+{% endblock %}

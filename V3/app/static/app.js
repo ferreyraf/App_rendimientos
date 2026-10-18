@@ -51,7 +51,8 @@
       if (btn && !window.confirm(btn.dataset.confirmar)) event.preventDefault();
     });
 
-    document.querySelectorAll('button[formaction*="eliminar"]').forEach(function (btn) {
+    // Los que ya traen su propio mensaje (data-confirmar) no preguntan dos veces.
+    document.querySelectorAll('button[formaction*="eliminar"]:not([data-confirmar])').forEach(function (btn) {
       btn.addEventListener("click", function (event) {
         if (!window.confirm("¿Confirmás que querés eliminar este registro?")) {
           event.preventDefault();

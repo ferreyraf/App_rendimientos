@@ -1,0 +1,37 @@
+{# Entrenamiento en la pantalla Hoy. Usa: en_curso, hechas, cardio, rutinas, kg, formato_duracion. #}
+{% if en_curso %}
+  <div class="vacio-panel entreno-hoy">
+    <p><strong>🏋️ {{ en_curso.nombre }}</strong> en curso desde las {{ en_curso.inicio.strftime("%H:%M") }} · {{ en_curso.series_hechas }} series hechas.</p>
+    <a class="boton boton-primario" href="{{ url_for('entrenamiento.gimnasio') }}">Seguir entrenando</a>
+  </div>
+{% else %}
+  {% for s in hechas %}
+    <div class="agenda-fila">
+      <span class="agenda-horario">✓ Gym</span>
+      <span class="agenda-texto"><strong>{{ s.nombre }}</strong><span class="fila-config-detalle">{{ s.series_hechas }} series · {{ kg(s.volumen, 0) }} kg{% if s.minutos is not none %} · {{ s.minutos }} min{% endif %}</span></span>
+    </div>
+  {% endfor %}
+  {% for a in cardio %}
+    <div class="agenda-fila">
+      <span class="agenda-horario">✓ {{ a.emoji }}</span>
+      <span class="agenda-texto"><strong>{{ a.nombre_tipo }}</strong><span class="fila-config-detalle">{% if a.distancia_km %}{{ kg(a.distancia_km, 2) }} km · {% endif %}{{ formato_duracion(a.duracion_s) }}</span></span>
+    </div>
+  {% endfor %}
+  {% for r in rutinas %}
+    <div class="agenda-fila">
+      <span class="agenda-horario">Toca hoy</span>
+      <span class="agenda-texto"><strong>{{ r.nombre }}</strong><span class="fila-config-detalle">{{ r['items']|length }} ejercicio{{ 's' if r['items']|length != 1 }}</span></span>
+      {% if not hechas %}
+      <form method="post" action="{{ url_for('entrenamiento.empezar_sesion') }}">
+        <input type="hidden" name="rutina_id" value="{{ r.id }}">
+        <button type="submit" class="btn-primary">Empezar</button>
+      </form>
+      {% endif %}
+    </div>
+  {% endfor %}
+  {% if not hechas and not cardio and not rutinas %}
+    <div class="vacio-panel">
+      <p>Hoy no tenés nada planificado. <a href="{{ url_for('entrenamiento.gimnasio') }}">Entrenar igual</a> o <a href="{{ url_for('entrenamiento.cardio') }}">anotar cardio</a>.</p>
+    </div>
+  {% endif %}
+{% endif %}
