@@ -4,8 +4,10 @@ puerto local libre y lo muestra en una ventana nativa (pywebview).
 En Windows pywebview usa WebView2 (Edge); en Linux, Qt WebEngine.
 
 Cerrar la ventana la deja funcionando en segundo plano (ícono en la bandeja),
-para que sigan llegando los recordatorios del rulo; "Salir" desde la bandeja
-la cierra del todo. Abrir la app de nuevo vuelve a mostrar la misma ventana.
+para que sigan sonando las alarmas y llegando los avisos; "Salir" desde la
+bandeja la cierra del todo. Abrir la app de nuevo vuelve a mostrar la misma
+ventana. Con `--oculta` (el acceso directo de inicio de Windows) arranca
+directo en la bandeja.
 """
 
 import logging
@@ -24,7 +26,8 @@ os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--lang=es-419")
 import webview  # noqa: E402
 
 from app import create_app, db, preferencias  # noqa: E402
-from app.recordatorios import Recordatorios, notificar  # noqa: E402
+from app.recordatorios import Recordatorios, VigiaAlarmas, notificar
+from app.sonidos import Timbre  # noqa: E402
 from app.version import APP_ID, APP_NAME, __version__  # noqa: E402
 
 HOST = "127.0.0.1"
@@ -216,12 +219,12 @@ def _ventana_mensaje(titulo, cuerpo_html):
     _start_webview()
 
 
-def _start_webview():
+def _start_webview(al_arrancar=None):
     opciones = {}
     if sys.platform.startswith("linux"):
         opciones["gui"] = "qt"
         opciones["icon"] = ICONO
-    webview.start(**opciones)
+    webview.start(al_arrancar, **opciones)
 
 
 def main():
@@ -266,14 +269,17 @@ def main():
     if sys.platform.startswith("linux"):
         _preparar_qt()
 
+    oculta = "--oculta" in sys.argv[1:]
     ventana = webview.create_window(
         f"{APP_NAME} {__version__}",
         f"http://{HOST}:{puerto}",
         width=1320,
         height=900,
         min_size=(960, 640),
+        hidden=oculta,
     )
     estado = {"saliendo": False, "avisado": False}
+    timbre = Timbre(db.DATA_DIR / "sonidos")
 
     def mostrar():
         ventana.show()
@@ -281,12 +287,16 @@ def main():
 
     def salir():
         estado["saliendo"] = True
+        timbre.detener()
         bandeja.ocultar()
         ventana.destroy()
         if sys.platform.startswith("linux"):
             _terminar_qt()
 
     bandeja = Bandeja(mostrar, salir)
+    if oculta and not bandeja.disponible:
+        # Sin bandeja no habría forma de abrirla: se muestra igual.
+        threading.Thread(target=mostrar, daemon=True).start()
 
     def al_cerrar():
         if estado["saliendo"]:
@@ -299,7 +309,7 @@ def main():
                 estado["avisado"] = True
                 notificar(
                     f"{APP_NAME} sigue funcionando",
-                    "Te va a avisar cuándo mover la plata. Abrila desde el ícono de la bandeja.",
+                    "Las alarmas y los avisos siguen andando. Abrila desde el ícono de la bandeja.",
                     ICONO,
                 )
             return False
@@ -313,7 +323,26 @@ def main():
     threading.Thread(target=_escuchar_otras_instancias, args=(candado, mostrar), daemon=True).start()
     Recordatorios(icono=ICONO).start()
 
-    _start_webview()
+    def al_sonar_alarma():
+        """Trae la ventana al frente con el aviso de la alarma."""
+        try:
+            mostrar()
+            ventana.on_top = True
+            ventana.evaluate_js("window.revisarAlarmas && window.revisarAlarmas()")
+            time.sleep(1)
+            ventana.on_top = False
+        except Exception:
+            logger.warning("No se pudo mostrar la ventana de la alarma", exc_info=True)
+
+    vigia = VigiaAlarmas(timbre, al_sonar=al_sonar_alarma, icono=ICONO)
+    # La app toca el sonido de las alarmas (la página solo muestra el aviso),
+    # y al detener o posponer se corta enseguida.
+    app.config["SONIDO_NATIVO"] = True
+    app.config["AL_ATENDER_ALARMA"] = vigia.revisar_ya
+
+    # El vigía arranca con la interfaz ya andando: si una alarma está sonando
+    # al abrir, tiene que poder mostrar la ventana.
+    _start_webview(vigia.start)
     candado.close()
 
 

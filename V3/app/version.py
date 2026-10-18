@@ -11,3 +11,6 @@ PUBLISHER = "Fer F"
 DESCRIPTION = "Tu día en un solo lugar: rutina, hábitos, entrenamiento y finanzas (rulo entre billeteras, gastos e ingresos)"
 # Releases publicadas (para avisar cuando hay una versión nueva).
 REPO_GITHUB = "ferreyraf/App_rendimientos"
+# Las releases de Bitácora llevan tags "bitacora-v3.0.0". Así la V2 instalada
+# (que solo entiende tags "v2.1.0") no las toma como una versión suya.
+PREFIJO_TAG = "bitacora-v"

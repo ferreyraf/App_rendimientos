@@ -1,9 +1,9 @@
 #!/bin/sh
 # Punto de entrada del AppImage de @APP_NAME@ @VERSION@.
-#   ./RuloFinanciero.AppImage                 abre la app
-#   ./RuloFinanciero.AppImage --instalar      la instala para este usuario
-#   ./RuloFinanciero.AppImage --desinstalar   la desinstala (agregá --borrar-datos para borrar también tus datos)
-#   ./RuloFinanciero.AppImage --version
+#   ./Bitacora.AppImage                 abre la app
+#   ./Bitacora.AppImage --instalar      la instala para este usuario
+#   ./Bitacora.AppImage --desinstalar   la desinstala (agregá --borrar-datos para borrar también tus datos)
+#   ./Bitacora.AppImage --version
 HERE="$(dirname "$(readlink -f "$0")")"
 
 case "$1" in

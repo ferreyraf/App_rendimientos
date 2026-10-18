@@ -5,6 +5,8 @@ captura avisa a qué billetera mover la plata (y otra vez a la hora justa), a
 la mañana avisa los pagos que vencen ese día, y avisa los bloques de la
 agenda según el aviso de cada uno. Las preferencias (activar,
 minutos de anticipación) están en `preferencias`.
+
+`VigiaAlarmas` es aparte y más frecuente: hace sonar las alarmas.
 """
 
 import logging
@@ -181,3 +183,52 @@ class Recordatorios(threading.Thread):
             except Exception:
                 logger.exception("Error revisando recordatorios")
             time.sleep(20)
+
+
+class VigiaAlarmas(threading.Thread):
+    """Cada 2 segundos mira si hay una alarma sonando: si hay, toca su
+    sonido (aunque la ventana esté escondida), avisa con una notificación y
+    llama a `al_sonar` (que muestra la ventana con Detener / Posponer); si
+    ya no hay ninguna, corta el sonido. `revisar_ya()` adelanta la próxima
+    vuelta (al detener o posponer, para que el sonido se corte enseguida)."""
+
+    def __init__(self, timbre, al_sonar=None, icono: str | None = None):
+        super().__init__(daemon=True, name="alarmas")
+        self.timbre = timbre
+        self.al_sonar = al_sonar
+        self.icono = icono
+        self._despertar = threading.Event()
+        self._avisadas: set[str] = set()
+
+    def revisar_ya(self):
+        self._despertar.set()
+
+    def revisar(self, ahora: datetime) -> None:
+        from .rutina import datos as datos_rutina
+        from .rutina.logica import alarmas_sonando
+
+        conn = _conectar()
+        try:
+            sonando = alarmas_sonando(datos_rutina.get_alarmas(conn, db.usuario_actual()), ahora)
+        finally:
+            conn.close()
+        if not sonando:
+            self.timbre.detener()
+            return
+        alarma, desde = sonando[0]
+        self.timbre.sonar(alarma.sonido)
+        clave = f"{alarma.id}-{desde:%Y%m%d%H%M}"
+        if clave not in self._avisadas:
+            self._avisadas.add(clave)
+            notificar(f"⏰ {alarma.nombre}", f"Son las {desde:%H:%M}. Detenela o posponela desde {APP_NAME}.", self.icono)
+            if self.al_sonar:
+                self.al_sonar()
+
+    def run(self):
+        while True:
+            try:
+                self.revisar(datetime.now())
+            except Exception:
+                logger.exception("Error revisando las alarmas")
+            self._despertar.wait(2)
+            self._despertar.clear()

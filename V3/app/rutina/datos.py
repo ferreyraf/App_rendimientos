@@ -3,7 +3,7 @@
 
 from datetime import date, datetime
 
-from .logica import Bloque, Habito, Registro, Tarea
+from .logica import Alarma, Bloque, Habito, Registro, Tarea
 
 SCHEMA = """
 -- Hábitos: algo que se hace ciertos días de la semana, con una meta diaria
@@ -78,6 +78,24 @@ CREATE TABLE IF NOT EXISTS agenda_bloques (
     notas TEXT NOT NULL DEFAULT ''
 );
 
+-- Alarmas: suenan a la `hora` ciertos días (`dias`) o una vez (`fecha`).
+-- `atendida`: hasta qué momento ya se detuvo o pospuso (lo anterior no
+-- vuelve a sonar); `pospuesta_hasta`: cuándo vuelve a sonar si se pospuso.
+CREATE TABLE IF NOT EXISTS alarmas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    hora TEXT NOT NULL,
+    etiqueta TEXT NOT NULL DEFAULT '',
+    dias TEXT NOT NULL DEFAULT '',
+    fecha TEXT,
+    sonido TEXT NOT NULL DEFAULT 'clasica',
+    posponer_min INTEGER NOT NULL DEFAULT 5,
+    activa INTEGER NOT NULL DEFAULT 1,
+    atendida TEXT,
+    pospuesta_hasta TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_alarmas_usuario ON alarmas (usuario_id);
 CREATE INDEX IF NOT EXISTS idx_agenda_usuario ON agenda_bloques (usuario_id);
 CREATE INDEX IF NOT EXISTS idx_habitos_usuario ON habitos (usuario_id);
 CREATE INDEX IF NOT EXISTS idx_tareas_usuario ON tareas (usuario_id);
@@ -347,5 +365,87 @@ def update_bloque(conn, usuario: int, bloque_id: int, *valores) -> bool:
 
 def delete_bloque(conn, usuario: int, bloque_id: int) -> bool:
     cursor = conn.execute("DELETE FROM agenda_bloques WHERE id = ? AND usuario_id = ?", (bloque_id, usuario))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+# --- Alarmas -----------------------------------------------------------------
+
+def _alarma(row) -> Alarma:
+    return Alarma(
+        id=row["id"],
+        hora=row["hora"],
+        etiqueta=row["etiqueta"],
+        dias=tuple(int(d) for d in row["dias"].split(",") if d != ""),
+        fecha=date.fromisoformat(row["fecha"]) if row["fecha"] else None,
+        sonido=row["sonido"],
+        posponer_min=row["posponer_min"],
+        activa=bool(row["activa"]),
+        atendida=datetime.fromisoformat(row["atendida"]) if row["atendida"] else None,
+        pospuesta_hasta=datetime.fromisoformat(row["pospuesta_hasta"]) if row["pospuesta_hasta"] else None,
+    )
+
+
+def get_alarmas(conn, usuario: int) -> list[Alarma]:
+    rows = conn.execute("SELECT * FROM alarmas WHERE usuario_id = ? ORDER BY hora, id", (usuario,)).fetchall()
+    return [_alarma(r) for r in rows]
+
+
+def get_alarma(conn, usuario: int, alarma_id: int) -> Alarma | None:
+    row = conn.execute("SELECT * FROM alarmas WHERE id = ? AND usuario_id = ?", (alarma_id, usuario)).fetchone()
+    return _alarma(row) if row else None
+
+
+def _valores_alarma(hora, etiqueta, dias, fecha, sonido, posponer_min) -> tuple:
+    return (hora, etiqueta, ",".join(map(str, dias)), fecha.isoformat() if fecha else None, sonido, posponer_min)
+
+
+def add_alarma(conn, usuario: int, *valores) -> int:
+    # Atendida "ahora": si la hora de hoy ya pasó, no tiene que sonar al crearla.
+    cursor = conn.execute(
+        "INSERT INTO alarmas (hora, etiqueta, dias, fecha, sonido, posponer_min, atendida, usuario_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (*_valores_alarma(*valores), _ahora(), usuario),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def update_alarma(conn, usuario: int, alarma_id: int, *valores) -> bool:
+    """Editarla la vuelve a activar desde ahora (y cancela si estaba pospuesta)."""
+    cursor = conn.execute(
+        "UPDATE alarmas SET hora = ?, etiqueta = ?, dias = ?, fecha = ?, sonido = ?, posponer_min = ?, "
+        "activa = 1, atendida = ?, pospuesta_hasta = NULL WHERE id = ? AND usuario_id = ?",
+        (*_valores_alarma(*valores), _ahora(), alarma_id, usuario),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def set_alarma_activa(conn, usuario: int, alarma_id: int, activa: bool) -> bool:
+    cursor = conn.execute(
+        "UPDATE alarmas SET activa = ?, atendida = ?, pospuesta_hasta = NULL WHERE id = ? AND usuario_id = ?",
+        (int(activa), _ahora(), alarma_id, usuario),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def atender_alarma(conn, usuario: int, alarma_id: int, ahora: datetime, pospuesta_hasta: datetime | None,
+                   desactivar: bool = False) -> bool:
+    """Detiene (pospuesta_hasta None) o pospone lo que esté sonando. Las de
+    una sola vez se desactivan al detenerlas."""
+    cursor = conn.execute(
+        "UPDATE alarmas SET atendida = ?, pospuesta_hasta = ?, activa = CASE WHEN ? THEN 0 ELSE activa END "
+        "WHERE id = ? AND usuario_id = ?",
+        (ahora.isoformat(timespec="seconds"), pospuesta_hasta.isoformat(timespec="seconds") if pospuesta_hasta else None,
+         int(desactivar), alarma_id, usuario),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def delete_alarma(conn, usuario: int, alarma_id: int) -> bool:
+    cursor = conn.execute("DELETE FROM alarmas WHERE id = ? AND usuario_id = ?", (alarma_id, usuario))
     conn.commit()
     return cursor.rowcount > 0

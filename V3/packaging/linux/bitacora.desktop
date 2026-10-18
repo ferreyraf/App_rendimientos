@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=@APP_NAME@
+Comment=@DESCRIPTION@
+Exec=@EXEC@
+Icon=bitacora
+Terminal=false
+Categories=Office;Utility;
+Keywords=rutina;hábitos;agenda;alarmas;entrenamiento;gimnasio;finanzas;rulo;

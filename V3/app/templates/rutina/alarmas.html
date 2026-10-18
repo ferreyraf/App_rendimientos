@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Alarmas</h1>
+    <p class="subtitle">Suenan a la hora, se detienen o se posponen. Tocá una alarma para editarla.</p>
+  </div>
+</header>
+
+<section class="kpi-row" id="alarmas-kpis" data-refrescable aria-label="Tus alarmas">
+  <div class="stat-tile">
+    <p class="stat-label">Próxima alarma</p>
+    <p class="stat-value">{% if proxima %}{{ proxima[1].strftime('%H:%M') }}{% else %}—{% endif %}</p>
+    <p class="stat-note">{% if proxima %}{{ proxima[0].nombre }} · {{ falta_proxima }}{% else %}ninguna activa{% endif %}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Activas</p>
+    <p class="stat-value">{{ activas }} de {{ alarmas|length }}</p>
+    <p class="stat-note">{{ "Las apagadas no suenan" if alarmas|length > activas else "Todas prendidas" if alarmas else "Creá la primera" }}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Dónde suenan</p>
+    <p class="stat-value">{{ "Escritorio" if config.get("SONIDO_NATIVO") else "Navegador" }}</p>
+    <p class="stat-note">{{ "aunque la ventana esté cerrada en la bandeja" if config.get("SONIDO_NATIVO") else "con esta página abierta" }}</p>
+  </div>
+</section>
+
+<div class="config-split llenar">
+  <section class="config-lista" aria-label="Lista de alarmas">
+    <div class="alarmas-lista" id="alarmas-lista" data-refrescable>
+      {% for it in alarmas %}
+        {% set a = it.a %}
+        <div class="alarma-fila {{ 'alarma-apagada' if not a.activa }}">
+          <button type="button" class="alarma-texto" data-editar='{{ it.edicion }}' data-panel="panel-alarma">
+            <span class="alarma-hora">{{ a.hora }}</span>
+            <span class="fila-config-principal">
+              <strong>{{ a.nombre }}</strong>
+              <span class="fila-config-detalle">
+                {{ a.descripcion_cuando }}
+                {%- if it.proxima %} · suena {{ falta(ahora, it.proxima) }}{% if a.pospuesta_hasta and it.proxima == a.pospuesta_hasta %} (pospuesta){% endif %}{% endif %}
+              </span>
+            </span>
+          </button>
+          <form method="post" action="{{ url_for('rutina.activar_alarma', alarma_id=a.id) }}" data-rapido>
+            <input type="hidden" name="volver" value="{{ url_for('rutina.alarmas') }}">
+            <input type="hidden" name="activa" value="{{ '0' if a.activa else '1' }}">
+            <button type="submit" class="interruptor" role="switch" aria-checked="{{ 'true' if a.activa else 'false' }}"
+                    aria-label="{{ 'Apagar' if a.activa else 'Prender' }} la alarma de las {{ a.hora }}"><span></span></button>
+          </form>
+        </div>
+      {% else %}
+        <p class="vacio lista-vacia">Todavía no tenés alarmas. Creá una con el formulario: por ejemplo, "Despertador" de lunes a viernes.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="panel-edicion" id="panel-alarma" data-panel-edicion aria-labelledby="panel-alarma-titulo">
+    <div class="panel-cabecera">
+      <div>
+        <span class="panel-modo" data-panel-modo>Nueva alarma</span>
+        <h2 id="panel-alarma-titulo" data-panel-titulo>Agregar alarma</h2>
+      </div>
+      <button type="button" class="btn-icono" data-panel-cerrar data-solo-edicion aria-label="Cerrar y volver a agregar" hidden>×</button>
+    </div>
+    <form method="post" action="{{ url_for('rutina.crear_alarma') }}" class="panel-form" id="form-alarma">
+      <input type="hidden" name="volver" value="{{ url_for('rutina.alarmas') }}">
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="alarma-hora">Hora</label>
+          <input id="alarma-hora" type="time" name="hora" required value="07:00">
+        </div>
+        <div class="campo">
+          <label for="alarma-posponer">Posponer</label>
+          <select id="alarma-posponer" name="posponer_min">
+            {% for m in posponer %}<option value="{{ m }}">{{ m }} minutos</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="alarma-etiqueta">Nombre</label>
+        <input id="alarma-etiqueta" type="text" name="etiqueta" maxlength="60" placeholder="Ej. Despertador, Pastilla">
+      </div>
+      <fieldset class="panel-grupo">
+        <legend>Cuándo</legend>
+        <div class="segmentado" role="radiogroup" aria-label="Se repite o suena una vez">
+          <label><input type="radio" name="tipo" value="semanal" checked><span>Se repite</span></label>
+          <label><input type="radio" name="tipo" value="una_vez"><span>Una sola vez</span></label>
+        </div>
+        <div class="selector-dias" data-solo-tipo="semanal">
+          {% for d in dias_cortos %}
+            <label><input type="checkbox" name="dias" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 < 5 }}><span>{{ d }}</span></label>
+          {% endfor %}
+        </div>
+        <div class="campo" data-solo-tipo="una_vez" hidden>
+          <label for="alarma-fecha">Día</label>
+          <input id="alarma-fecha" type="date" name="fecha" value="{{ hoy.isoformat() }}">
+        </div>
+      </fieldset>
+      <div class="campo">
+        <label for="alarma-sonido">Sonido</label>
+        <div class="campo-con-boton">
+          <select id="alarma-sonido" name="sonido">
+            {% for valor, texto in sonidos.items() %}<option value="{{ valor }}">{{ texto }}</option>{% endfor %}
+          </select>
+          <button type="button" class="btn-secondary" id="probar-sonido" aria-pressed="false">▶ Probar</button>
+        </div>
+      </div>
+      <div class="panel-acciones">
+        <button type="submit" class="btn-primary" data-guardar>Agregar</button>
+        <button type="button" class="btn-secondary" data-panel-cerrar data-solo-edicion hidden>Cancelar</button>
+        <button type="submit" class="btn-texto-peligro" formnovalidate data-solo-edicion data-url="url_eliminar" data-confirmar="¿Eliminar esta alarma?" hidden>Eliminar</button>
+      </div>
+    </form>
+  </aside>
+</div>
+
+<script>
+  (function () {
+    const form = document.getElementById('form-alarma');
+    // "Se repite" muestra los días; "Una sola vez", la fecha.
+    const actualizar = () => {
+      const tipo = form.querySelector('input[name="tipo"]:checked').value;
+      form.querySelectorAll('[data-solo-tipo]').forEach((el) => { el.hidden = el.dataset.soloTipo !== tipo; });
+    };
+    form.addEventListener('change', actualizar);
+    form.addEventListener('panel:actualizado', actualizar);
+    actualizar();
+
+    // Probar el sonido elegido (una vez; otro clic lo corta).
+    const probar = document.getElementById('probar-sonido');
+    const sonido = document.getElementById('alarma-sonido');
+    const base = "{{ url_for('rutina.sonido_alarma', nombre='NOMBRE') }}";
+    let audio = null;
+    const parar = () => {
+      if (audio) { audio.pause(); audio = null; }
+      probar.textContent = '▶ Probar';
+      probar.setAttribute('aria-pressed', 'false');
+    };
+    probar.addEventListener('click', () => {
+      if (audio) return parar();
+      audio = new Audio(base.replace('NOMBRE', sonido.value));
+      audio.addEventListener('ended', parar);
+      audio.play().catch(parar);
+      probar.textContent = '■ Parar';
+      probar.setAttribute('aria-pressed', 'true');
+    });
+    sonido.addEventListener('change', parar);
+  })();
+</script>
+{% endblock %}

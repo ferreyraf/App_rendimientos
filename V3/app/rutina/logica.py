@@ -288,3 +288,105 @@ def avisos_agenda(del_dia: list[Bloque], ahora: datetime, enviados: set) -> list
             cuerpo = f"De {b.inicio} a {b.fin}." + (f" {b.notas}" if b.notas else "")
             avisos.append((f"agenda-{b.id}-{ahora:%Y%m%d}-{b.inicio}", titulo, cuerpo))
     return [a for a in avisos if a[0] not in enviados]
+
+
+# --- Alarmas -----------------------------------------------------------------
+
+# Una alarma suena hasta que se la detiene o pospone; si nadie la atiende,
+# se calla sola pasado este tiempo (como en el celular).
+MINUTOS_SONANDO = 15
+
+
+@dataclass(frozen=True)
+class Alarma:
+    """Suena a la `hora` ciertos días de la semana (`dias`) o una sola vez
+    (`fecha`). `atendida`: la última vez que sonó y se detuvo o pospuso (lo
+    anterior ya no vuelve a sonar). `pospuesta_hasta`: vuelve a sonar a esa
+    hora."""
+    id: int
+    hora: str  # "HH:MM"
+    etiqueta: str = ""
+    dias: tuple[int, ...] = ()
+    fecha: date | None = None
+    sonido: str = "clasica"
+    posponer_min: int = 5
+    activa: bool = True
+    atendida: datetime | None = None
+    pospuesta_hasta: datetime | None = None
+
+    @property
+    def nombre(self) -> str:
+        return self.etiqueta or "Alarma"
+
+    @property
+    def descripcion_cuando(self) -> str:
+        if self.fecha:
+            return f"Una vez, el {self.fecha:%d/%m/%Y}"
+        return Habito(0, "", self.dias, date.min).descripcion_dias
+
+    def _momento(self, dia: date) -> datetime:
+        return datetime.combine(dia, datetime.strptime(self.hora, "%H:%M").time())
+
+    def ultima(self, ahora: datetime) -> datetime | None:
+        """La última vez que le tocó sonar (hasta `ahora` inclusive)."""
+        if self.fecha:
+            momento = self._momento(self.fecha)
+            return momento if momento <= ahora else None
+        for atras in range(8):
+            dia = ahora.date() - timedelta(days=atras)
+            if dia.weekday() in self.dias and self._momento(dia) <= ahora:
+                return self._momento(dia)
+        return None
+
+    def proxima(self, ahora: datetime) -> datetime | None:
+        """La próxima vez que va a sonar (después de `ahora`)."""
+        if not self.activa:
+            return None
+        candidatas = []
+        if self.pospuesta_hasta and self.pospuesta_hasta > ahora:
+            candidatas.append(self.pospuesta_hasta)
+        if self.fecha:
+            momento = self._momento(self.fecha)
+            if momento > ahora:
+                candidatas.append(momento)
+        else:
+            for adelante in range(8):
+                dia = ahora.date() + timedelta(days=adelante)
+                if dia.weekday() in self.dias and self._momento(dia) > ahora:
+                    candidatas.append(self._momento(dia))
+                    break
+        return min(candidatas, default=None)
+
+    def sonando(self, ahora: datetime) -> datetime | None:
+        """Desde cuándo está sonando, o None si no suena."""
+        if not self.activa:
+            return None
+        ventana = timedelta(minutes=MINUTOS_SONANDO)
+        if self.pospuesta_hasta and self.pospuesta_hasta <= ahora < self.pospuesta_hasta + ventana:
+            return self.pospuesta_hasta
+        ultima = self.ultima(ahora)
+        if ultima and ahora < ultima + ventana and (self.atendida is None or ultima > self.atendida):
+            return ultima
+        return None
+
+
+def alarmas_sonando(alarmas: list[Alarma], ahora: datetime) -> list[tuple[Alarma, datetime]]:
+    sonando = [(a, desde) for a in alarmas if (desde := a.sonando(ahora))]
+    return sorted(sonando, key=lambda par: par[1])
+
+
+def proxima_alarma(alarmas: list[Alarma], ahora: datetime) -> tuple[Alarma, datetime] | None:
+    proximas = [(a, cuando) for a in alarmas if (cuando := a.proxima(ahora))]
+    return min(proximas, key=lambda par: par[1], default=None)
+
+
+def falta(desde: datetime, hasta: datetime) -> str:
+    """Cuánto falta, para mostrar: "en 7 h 20 min", "en 3 días"..."""
+    minutos = max(0, -(-int((hasta - desde).total_seconds()) // 60))  # redondeado para arriba
+    if minutos < 60:
+        return f"en {minutos} min"
+    horas, resto = divmod(minutos, 60)
+    if horas < 24:
+        return f"en {horas} h {resto} min" if resto else f"en {horas} h"
+    dias = round(minutos / 1440)
+    return f"en {dias} día{'s' if dias != 1 else ''}"

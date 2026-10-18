@@ -23,15 +23,15 @@ if [ "$(readlink -f "$ORIGEN")" != "$(readlink -f "$INSTALADO" 2>/dev/null || tr
   chmod 755 "$INSTALADO.nuevo"
   mv -f "$INSTALADO.nuevo" "$INSTALADO"
 fi
-ln -sf "$INSTALADO" "$HOME/.local/bin/rulo-financiero"
+ln -sf "$INSTALADO" "$HOME/.local/bin/bitacora"
 
 cp -rf "$HERE/usr/share/icons/hicolor/." "$ICONOS/"
-sed "s|^Exec=.*|Exec=\"$INSTALADO\"|" "$HERE/rulo-financiero.desktop" > "$APLICACIONES/rulo-financiero.desktop"
-chmod 644 "$APLICACIONES/rulo-financiero.desktop"
+sed "s|^Exec=.*|Exec=\"$INSTALADO\"|" "$HERE/bitacora.desktop" > "$APLICACIONES/bitacora.desktop"
+chmod 644 "$APLICACIONES/bitacora.desktop"
 
 update-desktop-database "$APLICACIONES" >/dev/null 2>&1 || true
 gtk-update-icon-cache -f -t "$ICONOS" >/dev/null 2>&1 || true
 
 echo "✔ @APP_NAME@ @VERSION@ instalado."
-echo "  Abrilo desde el menú de aplicaciones o con el comando: rulo-financiero"
+echo "  Abrilo desde el menú de aplicaciones o con el comando: bitacora"
 echo "  Programa: $INSTALADO"

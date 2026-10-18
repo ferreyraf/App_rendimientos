@@ -2,9 +2,11 @@
 
     python packaging/build.py
 
-- Linux: dist/release/RuloFinanciero-<versión>-x86_64.AppImage (se instala
+- Linux: dist/release/Bitacora-<versión>-x86_64.AppImage (se instala
   con `--instalar`) más instalar.sh / desinstalar.sh.
-- Windows: dist/release/RuloFinanciero-<versión>-Setup.exe (Inno Setup).
+- Windows: dist/release/Bitacora-<versión>-Setup.exe (Inno Setup). Trae
+  todo lo necesario (Python incluido); si a la PC le falta WebView2, el
+  instalador lo agrega.
 
 Requiere las dependencias de requirements.txt + requirements-build.txt.
 """
@@ -32,6 +34,9 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(RAIZ))
 from app.version import APP_ID, APP_NAME, DESCRIPTION, PUBLISHER, __version__  # noqa: E402
 
+# Instalador "bootstrapper" de WebView2 (2 MB): baja e instala la versión
+# actual. Solo se usa si a la PC le falta (Windows 10/11 ya lo traen).
+WEBVIEW2_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 APPIMAGETOOL_URL = (
     "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
 )
@@ -174,16 +179,16 @@ def appimage(compilado: Path) -> Path:
         texto = texto.replace("@APP_ID@", APP_ID).replace("@APP_NAME@", APP_NAME).replace("@VERSION@", __version__)
         _ejecutable(appdir / script, texto)
 
-    escritorio = (linux / "rulo-financiero.desktop").read_text(encoding="utf-8")
+    escritorio = (linux / "bitacora.desktop").read_text(encoding="utf-8")
     escritorio = escritorio.replace("@APP_NAME@", APP_NAME).replace("@DESCRIPTION@", DESCRIPTION)
-    (appdir / "rulo-financiero.desktop").write_text(escritorio.replace("@EXEC@", "AppRun"), encoding="utf-8")
-    shutil.copy(PACKAGING / "icons" / "icono-256.png", appdir / "rulo-financiero.png")
+    (appdir / "bitacora.desktop").write_text(escritorio.replace("@EXEC@", "AppRun"), encoding="utf-8")
+    shutil.copy(PACKAGING / "icons" / "icono-256.png", appdir / "bitacora.png")
     shutil.copy(PACKAGING / "icons" / "icono-256.png", appdir / ".DirIcon")
     iconos = appdir / "usr" / "share" / "icons"
     for tamano in (32, 48, 64, 128, 256, 512):
         carpeta = iconos / "hicolor" / f"{tamano}x{tamano}" / "apps"
         carpeta.mkdir(parents=True, exist_ok=True)
-        shutil.copy(PACKAGING / "icons" / f"icono-{tamano}.png", carpeta / "rulo-financiero.png")
+        shutil.copy(PACKAGING / "icons" / f"icono-{tamano}.png", carpeta / "bitacora.png")
 
     RELEASE.mkdir(parents=True, exist_ok=True)
     salida = RELEASE / f"{APP_ID}-{__version__}-x86_64.AppImage"
@@ -220,6 +225,15 @@ def _iscc() -> Path | None:
     return None
 
 
+def _webview2_bootstrapper() -> Path:
+    destino = BUILD / "tools" / "MicrosoftEdgeWebview2Setup.exe"
+    if not destino.exists():
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        print("→ Descargando el instalador de WebView2")
+        urllib.request.urlretrieve(WEBVIEW2_URL, destino)
+    return destino
+
+
 def instalador_windows(compilado: Path) -> Path:
     iscc = _iscc()
     if iscc is None:
@@ -228,6 +242,7 @@ def instalador_windows(compilado: Path) -> Path:
     subprocess.run(
         [
             str(iscc),
+            f"/DWebView2Bootstrapper={_webview2_bootstrapper()}",
             f"/DAppVersion={__version__}",
             f"/DAppName={APP_NAME}",
             f"/DAppId={APP_ID}",
@@ -235,7 +250,7 @@ def instalador_windows(compilado: Path) -> Path:
             f"/DSourceDir={compilado}",
             f"/DIconFile={PACKAGING / 'icons' / 'icono.ico'}",
             f"/DOutputDir={RELEASE}",
-            str(PACKAGING / "windows" / "RuloFinanciero.iss"),
+            str(PACKAGING / "windows" / "Bitacora.iss"),
         ],
         check=True,
     )

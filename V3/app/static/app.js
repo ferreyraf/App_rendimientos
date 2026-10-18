@@ -417,7 +417,91 @@
       .catch(function () {});
   }
 
+  // Alarmas: cada pocos segundos pregunta si hay alguna sonando y, si hay,
+  // muestra el aviso con Detener / Posponer encima de cualquier pantalla. En
+  // el navegador también toca el sonido; en la app de escritorio lo toca
+  // ella misma (sonido_nativo), así suena aunque la ventana esté escondida.
+  // La app de escritorio llama a window.revisarAlarmas() al mostrarse.
+  function setupAlarmas() {
+    var caja = document.getElementById("alarma-sonando");
+    var url = scriptActual && scriptActual.dataset.alarmas;
+    if (!caja || !url) return;
+    var audio = null;
+    var actual = null;
+    var activarSonido = caja.querySelector("[data-alarma-activar-sonido]");
+
+    function callar() {
+      if (audio) { audio.pause(); audio = null; }
+    }
+
+    function sonar(src) {
+      if (audio && audio.dataset.src === src) return;
+      callar();
+      audio = new Audio(src);
+      audio.dataset.src = src;
+      audio.loop = true;
+      // Sin un clic previo en la página el navegador puede no dejarla sonar.
+      audio.play().then(function () { activarSonido.hidden = true; })
+        .catch(function () { activarSonido.hidden = false; });
+    }
+
+    function mostrar(datos) {
+      var lista = (datos && datos.sonando) || [];
+      if (!lista.length) {
+        actual = null;
+        caja.hidden = true;
+        callar();
+        return;
+      }
+      actual = lista[0];
+      caja.querySelector("[data-alarma-hora]").textContent = actual.hora;
+      caja.querySelector("[data-alarma-nombre]").textContent = actual.nombre;
+      var mas = caja.querySelector("[data-alarma-mas]");
+      mas.hidden = lista.length < 2;
+      mas.textContent = lista.length === 2 ? "y 1 alarma más" : "y " + (lista.length - 1) + " alarmas más";
+      caja.querySelector("[data-alarma-posponer]").textContent = "Posponer " + actual.posponer_min + " min";
+      var abrir = caja.hidden;
+      caja.hidden = false;
+      if (abrir) caja.querySelector("[data-alarma-detener]").focus();
+      if (datos.sonido_nativo) activarSonido.hidden = true;
+      else sonar(actual.sonido);
+    }
+
+    var pidiendo = false;
+    function revisar() {
+      if (pidiendo) return;
+      pidiendo = true;
+      fetch(url, { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (datos) { if (datos) mostrar(datos); })
+        .catch(function () {})
+        .then(function () { pidiendo = false; });
+    }
+
+    function atender(clave) {
+      if (!actual) return;
+      var destino = actual[clave];
+      callar();
+      caja.hidden = true;
+      fetch(destino, { method: "POST" }).catch(function () {}).then(revisar);
+    }
+
+    caja.querySelector("[data-alarma-detener]").addEventListener("click", function () { atender("url_detener"); });
+    caja.querySelector("[data-alarma-posponer]").addEventListener("click", function () { atender("url_posponer"); });
+    activarSonido.addEventListener("click", function () {
+      if (audio) audio.play().then(function () { activarSonido.hidden = true; }).catch(function () {});
+    });
+
+    window.revisarAlarmas = revisar;
+    revisar();
+    setInterval(revisar, 10000);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) revisar();
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
+    setupAlarmas();
     setupAvisoVersion();
     setupThemeToggle();
     setupNavToggle();

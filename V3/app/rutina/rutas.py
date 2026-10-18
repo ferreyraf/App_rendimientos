@@ -9,9 +9,9 @@ import calendar
 import json
 from datetime import date, datetime, timedelta
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, url_for
 
-from .. import db
+from .. import db, sonidos
 from ..routes import MESES, _entero, _fecha, _hora, _numero, ruta_interna
 from . import datos
 from .logica import (
@@ -19,16 +19,19 @@ from .logica import (
     CALIDADES,
     DIAS_CORTOS,
     PRIORIDADES,
+    alarmas_sonando,
     bloques_del_dia,
     clasificar_tareas,
     cumplimiento,
     estado_agenda,
+    falta,
     horas_de_sueno,
     media_movil,
     mejor_racha,
     porcentaje,
     progreso_del_dia,
     promedio,
+    proxima_alarma,
     racha,
     ubicar_bloques,
     valor_hace,
@@ -675,6 +678,170 @@ def eliminar_bloque(bloque_id):
     return redirect(ruta_interna(request.form.get("volver"), url_for("rutina.agenda")))
 
 
+# --- Alarmas --------------------------------------------------------------------
+
+POSPONER = (5, 10, 15, 20, 30)
+
+
+def _parse_alarma(form) -> tuple:
+    hora = _hora(form.get("hora") or "", "la hora")
+    etiqueta = (form.get("etiqueta") or "").strip()
+    if len(etiqueta) > MAX_NOMBRE:
+        raise ValueError(f"El nombre puede tener hasta {MAX_NOMBRE} caracteres.")
+    if form.get("tipo") == "una_vez":
+        dias, fecha = [], _fecha(form.get("fecha") or "", "el día")
+    else:
+        dias = sorted({_entero(d, "los días") for d in form.getlist("dias")})
+        if not dias or any(not 0 <= d <= 6 for d in dias):
+            raise ValueError("Elegí al menos un día de la semana.")
+        fecha = None
+    sonido = form.get("sonido") or "clasica"
+    if sonido not in sonidos.SONIDOS:
+        raise ValueError("Sonido inválido.")
+    posponer = _entero(form.get("posponer_min") or "5", "los minutos para posponer")
+    if posponer not in POSPONER:
+        raise ValueError("Opción de posponer inválida.")
+    return hora, etiqueta, dias, fecha, sonido, posponer
+
+
+def _datos_edicion_alarma(a) -> str:
+    return json.dumps({
+        "titulo": f"{a.hora} · {a.nombre}",
+        "url_editar": url_for("rutina.editar_alarma", alarma_id=a.id),
+        "url_eliminar": url_for("rutina.eliminar_alarma", alarma_id=a.id),
+        "campos": {
+            "hora": a.hora, "etiqueta": a.etiqueta, "tipo": "una_vez" if a.fecha else "semanal",
+            "dias": list(a.dias), "fecha": a.fecha.isoformat() if a.fecha else "",
+            "sonido": a.sonido, "posponer_min": str(a.posponer_min),
+        },
+    }, ensure_ascii=False)
+
+
+@bp.route("/alarmas")
+def alarmas():
+    ahora = datetime.now()
+    lista = datos.get_alarmas(db.get_db(), db.usuario_actual())
+    proxima = proxima_alarma(lista, ahora)
+    return render_template(
+        "rutina/alarmas.html",
+        ahora=ahora,
+        hoy=ahora.date(),
+        alarmas=[{"a": a, "proxima": a.proxima(ahora), "edicion": _datos_edicion_alarma(a)} for a in lista],
+        proxima=proxima,
+        falta_proxima=falta(ahora, proxima[1]) if proxima else "",
+        activas=sum(1 for a in lista if a.activa),
+        dias_cortos=DIAS_CORTOS,
+        sonidos=sonidos.SONIDOS,
+        posponer=POSPONER,
+        falta=falta,
+        fecha_corta=_fecha_corta,
+    )
+
+
+@bp.route("/alarmas", methods=["POST"])
+def crear_alarma():
+    try:
+        valores = _parse_alarma(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        alarma_id = datos.add_alarma(db.get_db(), db.usuario_actual(), *valores)
+        alarma = datos.get_alarma(db.get_db(), db.usuario_actual(), alarma_id)
+        cuando = alarma.proxima(datetime.now()) if alarma else None
+        flash(f"Alarma de las {valores[0]} creada" + (f": suena {falta(datetime.now(), cuando)}." if cuando else "."), "success")
+    return redirect(ruta_interna(request.form.get("volver"), url_for("rutina.alarmas")))
+
+
+@bp.route("/alarmas/<int:alarma_id>/editar", methods=["POST"])
+def editar_alarma(alarma_id):
+    try:
+        valores = _parse_alarma(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        if datos.update_alarma(db.get_db(), db.usuario_actual(), alarma_id, *valores):
+            flash("Alarma actualizada.", "success")
+        else:
+            flash("Esa alarma ya no existe.", "error")
+    return redirect(ruta_interna(request.form.get("volver"), url_for("rutina.alarmas")))
+
+
+@bp.route("/alarmas/<int:alarma_id>/activar", methods=["POST"])
+def activar_alarma(alarma_id):
+    """Prende o apaga la alarma (formulario rápido: sin mensaje)."""
+    if not datos.set_alarma_activa(db.get_db(), db.usuario_actual(), alarma_id, request.form.get("activa") == "1"):
+        flash("Esa alarma ya no existe.", "error")
+    return redirect(ruta_interna(request.form.get("volver"), url_for("rutina.alarmas")))
+
+
+@bp.route("/alarmas/<int:alarma_id>/eliminar", methods=["POST"])
+def eliminar_alarma(alarma_id):
+    if datos.delete_alarma(db.get_db(), db.usuario_actual(), alarma_id):
+        flash("Alarma eliminada.", "success")
+    else:
+        flash("Esa alarma ya no existe.", "error")
+    return redirect(ruta_interna(request.form.get("volver"), url_for("rutina.alarmas")))
+
+
+@bp.route("/alarmas/sonando")
+def alarmas_que_suenan():
+    """Lo que está sonando ahora. Todas las páginas lo consultan cada pocos
+    segundos para mostrar el aviso de la alarma (y tocar el sonido, salvo en
+    la app de escritorio, que lo toca ella)."""
+    ahora = datetime.now()
+    sonando = alarmas_sonando(datos.get_alarmas(db.get_db(), db.usuario_actual()), ahora)
+    return jsonify({
+        "sonido_nativo": bool(current_app.config.get("SONIDO_NATIVO")),
+        "sonando": [
+            {
+                "id": a.id,
+                "nombre": a.nombre,
+                "hora": desde.strftime("%H:%M"),
+                "posponer_min": a.posponer_min,
+                "sonido": url_for("rutina.sonido_alarma", nombre=a.sonido),
+                "url_detener": url_for("rutina.detener_alarma", alarma_id=a.id),
+                "url_posponer": url_for("rutina.posponer_alarma", alarma_id=a.id),
+            }
+            for a, desde in sonando
+        ],
+    })
+
+
+def _atender(alarma_id: int, posponer: bool):
+    usuario = db.usuario_actual()
+    conn = db.get_db()
+    alarma = datos.get_alarma(conn, usuario, alarma_id)
+    if alarma is None:
+        return jsonify({"ok": False, "error": "Esa alarma ya no existe."}), 404
+    ahora = datetime.now()
+    hasta = ahora + timedelta(minutes=alarma.posponer_min) if posponer else None
+    # Las de una sola vez se apagan al detenerlas (ya no les queda otra vez).
+    datos.atender_alarma(conn, usuario, alarma_id, ahora, hasta, desactivar=not posponer and alarma.fecha is not None)
+    avisar = current_app.config.get("AL_ATENDER_ALARMA")
+    if avisar:
+        avisar()
+    return jsonify({"ok": True, "vuelve": hasta.strftime("%H:%M") if hasta else None})
+
+
+@bp.route("/alarmas/<int:alarma_id>/detener", methods=["POST"])
+def detener_alarma(alarma_id):
+    return _atender(alarma_id, posponer=False)
+
+
+@bp.route("/alarmas/<int:alarma_id>/posponer", methods=["POST"])
+def posponer_alarma(alarma_id):
+    return _atender(alarma_id, posponer=True)
+
+
+@bp.route("/alarmas/sonido/<nombre>.wav")
+def sonido_alarma(nombre):
+    if nombre not in sonidos.SONIDOS:
+        return Response(status=404)
+    respuesta = Response(sonidos.wav(nombre), mimetype="audio/wav")
+    respuesta.cache_control.max_age = 86400
+    return respuesta
+
+
 # --- Aporte a la pantalla Hoy --------------------------------------------------
 
 def aporte_hoy(conn, ahora: datetime):
@@ -734,6 +901,10 @@ def aporte_hoy(conn, ahora: datetime):
         chips.append(f"Ahora: {actual.icono} {actual.titulo} hasta las {actual.fin}".replace("  ", " "))
     elif siguiente:
         chips.append(f"Después: {siguiente.icono} {siguiente.titulo} a las {siguiente.inicio}".replace("  ", " "))
+    proxima = proxima_alarma(datos.get_alarmas(conn, usuario), ahora)
+    if proxima and proxima[1] - ahora <= timedelta(hours=24):
+        alarma, cuando = proxima
+        chips.append(f"⏰ {alarma.nombre} a las {cuando:%H:%M} ({falta(ahora, cuando)})")
 
     return AporteHoy(
         indicadores=indicadores,

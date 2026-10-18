@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, send_file, url_for
 
 from . import cotizacion, db, formato_ar, formato_pesos, preferencias, respaldo
-from .version import APP_ID, APP_NAME, DESCRIPTION, PUBLISHER, REPO_GITHUB, __version__
+from .version import APP_ID, APP_NAME, DESCRIPTION, PREFIJO_TAG, PUBLISHER, REPO_GITHUB, __version__
 from .domain import (
     MovimientoRecurrente,
     Wallet,
@@ -824,8 +824,14 @@ _version_cache: dict = {"timestamp": 0.0, "datos": None}
 
 
 def _como_tupla(version: str) -> tuple[int, ...]:
+    """(3, 0, 1) para "3.0.1" o el tag "bitacora-v3.0.1". Los tags de otras
+    apps del mismo repositorio (los "v2.*" de la V2) no cuentan: () ."""
+    if not version[:1].isdigit():
+        if not version.startswith(PREFIJO_TAG):
+            return ()
+        version = version[len(PREFIJO_TAG):]
     try:
-        return tuple(int(p) for p in version.lstrip("v").split("."))
+        return tuple(int(p) for p in version.split("."))
     except ValueError:
         return ()
 
@@ -850,7 +856,7 @@ def api_version():
             ]
             mejor = max(candidatas, key=lambda r: _como_tupla(r["tag_name"]), default=None)
             if mejor and _como_tupla(mejor["tag_name"]) > _como_tupla(__version__):
-                nueva = {"version": mejor["tag_name"].lstrip("v"), "url": mejor["html_url"]}
+                nueva = {"version": mejor["tag_name"].removeprefix(PREFIJO_TAG), "url": mejor["html_url"]}
         except (OSError, ValueError, KeyError, TypeError):
             logger.info("No se pudo consultar la última versión", exc_info=True)
             return jsonify({"actual": __version__, "nueva": None})

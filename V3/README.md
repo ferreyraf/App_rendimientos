@@ -1,34 +1,60 @@
-# Rulo Financiero — V2
+# Bitácora — V3
 
-App de escritorio para seguir el **rulo financiero** (rotación de la plata entre billeteras virtuales para cobrar el rendimiento diario de cada una), junto con gastos, ingresos, ajustes por inflación y gastos en dólares.
+Tu día en un solo lugar:
 
-La versión actual está en `app/version.py` y se ve en la barra superior y en **Acerca de**.
+- **Hoy**: la pantalla de inicio, con todo lo del día.
+- **Rutina**: agenda por horarios, alarmas, hábitos con checklist, tareas, y registro de sueño, ánimo y peso.
+- **Entrenamiento**: gimnasio (rutinas, series y récords) y cardio.
+- **Finanzas**: el rulo entre billeteras virtuales, gastos, ingresos, ajustes por inflación y dólares (lo que era la V2).
+
+La versión actual está en `app/version.py` y se ve en el menú y en **Acerca de**.
 
 ## Instalar
+
+### Windows
+
+Ejecutá `Bitacora-3.0.0-Setup.exe`. No hace falta instalar nada más, porque Python y todas las librerías van adentro.
+
+- Instala para tu usuario, sin permisos de administrador.
+- Crea el acceso directo y queda en "Agregar o quitar programas".
+- Opcionalmente, se abre al iniciar Windows en segundo plano, para que suenen las alarmas.
+- Usa WebView2 (el motor de Edge), que Windows 10/11 ya traen. Si falta, el instalador lo agrega.
+
+Convive con la V2 (Rulo Financiero) instalada: cada una tiene sus propios datos.
 
 ### Linux
 
 ```sh
-./RuloFinanciero-2.0.0-x86_64.AppImage --instalar
+./Bitacora-3.0.0-x86_64.AppImage --instalar
 ```
 
-Queda en el menú de aplicaciones y como comando `rulo-financiero`. No necesita `sudo`.
-Para actualizar, instalá el AppImage nuevo de la misma forma.
-Para desinstalar: `rulo-financiero --desinstalar` (agregá `--borrar-datos` para borrar también tus datos).
+Queda en el menú de aplicaciones y como comando `bitacora`. No necesita `sudo`.
 
-### Windows
-
-Ejecutá `RuloFinanciero-2.0.0-Setup.exe`. Instala para tu usuario (sin permisos de administrador), con acceso directo y desinstalador en "Agregar o quitar programas". Usa WebView2 (Edge), que ya viene con Windows 10/11.
+- **Actualizar:** instalá el AppImage nuevo de la misma forma.
+- **Desinstalar:** `bitacora --desinstalar`. Agregá `--borrar-datos` para borrar también tus datos.
 
 ### Dónde quedan los datos
 
 | Sistema | Carpeta |
 |---|---|
-| Linux | `~/.local/share/RuloFinanciero/` |
-| Windows | `%LOCALAPPDATA%\RuloFinanciero\` |
-| Desarrollo | `V2/instance/` |
+| Linux | `~/.local/share/Bitacora/` |
+| Windows | `%LOCALAPPDATA%\Bitacora\` |
+| Desarrollo | `V3/instance/` |
 
-Ahí están la base (`rendimientos.db`), los backups automáticos y los logs. Actualizar o desinstalar la app no la borra. Se puede forzar otra carpeta con la variable `RULO_DATA_DIR`.
+Ahí están la base (`rendimientos.db`), los backups automáticos y los logs. Actualizar o desinstalar la app no los borra. Se puede forzar otra carpeta con la variable `RULO_DATA_DIR`.
+
+## Alarmas
+
+Se crean en **Rutina → Alarmas**. Cada alarma tiene:
+
+- una hora, y días de la semana o un día puntual;
+- un sonido;
+- los minutos para posponer.
+
+Cuando suena aparece un aviso con **Detener** / **Posponer** en cualquier pantalla. Si nadie la atiende, se calla sola a los 15 minutos.
+
+- **App de escritorio:** el sonido lo toca la propia app, así suena aunque la ventana esté escondida en la bandeja, y además trae la ventana al frente.
+- **Navegador:** suena mientras haya una página de la app abierta. Si el navegador bloquea el audio, el aviso ofrece activarlo.
 
 ## Desarrollo
 
@@ -44,18 +70,26 @@ Ahí están la base (`rendimientos.db`), los backups automáticos y los logs. Ac
 .venv/bin/python packaging/build.py
 ```
 
-Genera en `dist/release/` el instalador del sistema donde se corre: AppImage en Linux, `Setup.exe` en Windows (requiere [Inno Setup 6](https://jrsoftware.org/isdl.php)).
+Genera en `dist/release/` el instalador del sistema donde se corre:
+
+- **Linux:** el AppImage.
+- **Windows:** el `Setup.exe`. Requiere [Inno Setup 6](https://jrsoftware.org/isdl.php).
 
 ### Publicar una versión
 
-1. Subí el número en `app/version.py` (ej. `2.1.0`).
-2. Commit y tag: `git tag v2.1.0 && git push --tags`.
-3. GitHub Actions (`.github/workflows/build-v2.yml`, en la raíz del repo) compila Windows y Linux y publica una Release con los dos instaladores.
+1. Subí el número en `app/version.py` (ej. `3.1.0`).
+2. Hacé el commit y creá el tag con el prefijo `bitacora-v`: `git tag bitacora-v3.1.0 && git push origin bitacora-v3.1.0`. El prefijo hace que la V2 instalada no tome la release como suya.
+3. GitHub Actions (`.github/workflows/build-v3.yml`, en la raíz del repo) compila Windows y Linux y publica una Release con los dos instaladores.
 
-También se puede correr a mano desde la pestaña **Actions** sin crear una Release.
+El workflow también se puede correr a mano desde la pestaña **Actions**; así no se crea una Release.
 
 ## Estructura
 
-- `app/` — Flask + SQLite: dominio (`domain.py`), datos (`db.py`), pantallas (`routes.py`, `templates/`), cotización del dólar (`cotizacion.py`).
-- `desktop.py` — ventana nativa con pywebview (Qt WebEngine en Linux, WebView2 en Windows), una sola instancia a la vez.
-- `packaging/` — build (`build.py`), íconos, AppImage (`linux/`) e instalador de Windows (`windows/RuloFinanciero.iss`).
+- `app/` — Flask + SQLite.
+  - `hoy.py`: la pantalla Hoy, que junta lo que aporta cada sección.
+  - `rutina/` y `entrenamiento/`: cada sección con su `logica.py`, `datos.py` y `rutas.py`.
+  - Finanzas: `domain.py`, `db.py` y `routes.py`.
+  - `sonidos.py`: los tonos de las alarmas, generados en Python, y el timbre nativo.
+  - `recordatorios.py`: los avisos del sistema y el vigía de alarmas, que corren en la app de escritorio.
+- `desktop.py` — ventana nativa con pywebview (Qt WebEngine en Linux, WebView2 en Windows), ícono en la bandeja y una sola instancia a la vez.
+- `packaging/` — build (`build.py`), íconos (`icons/generar_icono.py`), AppImage (`linux/`) e instalador de Windows (`windows/Bitacora.iss`).
