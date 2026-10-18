@@ -189,3 +189,102 @@ def valor_hace(serie: dict[date, float], fecha: date, tolerancia: int = 7) -> fl
         if (fecha - timedelta(days=i)) in serie:
             return serie[fecha - timedelta(days=i)]
     return None
+
+
+# --- Agenda: bloques horarios ------------------------------------------------
+
+def _minutos(hhmm: str) -> int:
+    h, m = (int(x) for x in hhmm.split(":"))
+    return h * 60 + m
+
+
+@dataclass(frozen=True)
+class Bloque:
+    """Un rato del día reservado para algo. Se repite ciertos días de la
+    semana (`dias`) o es de un solo día (`fecha`). Termina el mismo día."""
+    id: int
+    titulo: str
+    inicio: str  # "HH:MM"
+    fin: str
+    dias: tuple[int, ...] = ()
+    fecha: date | None = None
+    aviso_min: int | None = None  # minutos antes de empezar (0 = a la hora; None = sin aviso)
+    icono: str = ""
+    notas: str = ""
+
+    def aplica(self, dia: date) -> bool:
+        return self.fecha == dia if self.fecha else dia.weekday() in self.dias
+
+    @property
+    def minuto_inicio(self) -> int:
+        return _minutos(self.inicio)
+
+    @property
+    def minuto_fin(self) -> int:
+        return _minutos(self.fin)
+
+    @property
+    def duracion(self) -> int:
+        return self.minuto_fin - self.minuto_inicio
+
+    @property
+    def descripcion_cuando(self) -> str:
+        if self.fecha:
+            return self.fecha.strftime("%d/%m/%Y")
+        return Habito(0, "", self.dias, date.min).descripcion_dias
+
+
+def bloques_del_dia(bloques: list[Bloque], dia: date) -> list[Bloque]:
+    return sorted((b for b in bloques if b.aplica(dia)), key=lambda b: (b.minuto_inicio, b.minuto_fin))
+
+
+def ubicar_bloques(del_dia: list[Bloque]) -> list[tuple[Bloque, int, int]]:
+    """(bloque, carril, carriles) para dibujar lado a lado los que se pisan:
+    cada grupo de bloques encadenados por solapamiento reparte su ancho."""
+    resultado, grupo, carriles_fin, fin_grupo = [], [], [], -1
+
+    def cerrar():
+        for bloque, carril in grupo:
+            resultado.append((bloque, carril, len(carriles_fin)))
+
+    for b in sorted(del_dia, key=lambda b: (b.minuto_inicio, b.minuto_fin)):
+        if grupo and b.minuto_inicio >= fin_grupo:
+            cerrar()
+            grupo, carriles_fin = [], []
+        carril = next((i for i, fin in enumerate(carriles_fin) if fin <= b.minuto_inicio), len(carriles_fin))
+        if carril == len(carriles_fin):
+            carriles_fin.append(b.minuto_fin)
+        else:
+            carriles_fin[carril] = b.minuto_fin
+        grupo.append((b, carril))
+        fin_grupo = max(fin_grupo, b.minuto_fin) if len(grupo) > 1 else b.minuto_fin
+    if grupo:
+        cerrar()
+    return resultado
+
+
+def estado_agenda(del_dia: list[Bloque], ahora: datetime) -> tuple[Bloque | None, Bloque | None]:
+    """(bloque en curso, próximo en empezar) del día de `ahora`."""
+    minuto = ahora.hour * 60 + ahora.minute
+    en_curso = [b for b in del_dia if b.minuto_inicio <= minuto < b.minuto_fin]
+    proximos = [b for b in del_dia if b.minuto_inicio > minuto]
+    return (en_curso[-1] if en_curso else None), (proximos[0] if proximos else None)
+
+
+def avisos_agenda(del_dia: list[Bloque], ahora: datetime, enviados: set) -> list[tuple[str, str, str]]:
+    """Notificaciones que corresponden ahora: (clave, título, cuerpo). El
+    aviso salta desde su momento hasta que empieza el bloque (o hasta 3 min
+    después si es "a la hora"), una sola vez por clave."""
+    avisos = []
+    for b in del_dia:
+        if b.aviso_min is None:
+            continue
+        empieza = datetime.combine(ahora.date(), datetime.strptime(b.inicio, "%H:%M").time())
+        momento = empieza - timedelta(minutes=b.aviso_min)
+        hasta = empieza if b.aviso_min else empieza + timedelta(minutes=3)
+        if momento <= ahora < hasta:
+            nombre = f"{b.icono} {b.titulo}".strip()
+            titulo = f"Ahora: {nombre}" if b.aviso_min == 0 else f"En {b.aviso_min} min: {nombre}"
+            cuerpo = f"De {b.inicio} a {b.fin}." + (f" {b.notas}" if b.notas else "")
+            avisos.append((f"agenda-{b.id}-{ahora:%Y%m%d}-{b.inicio}", titulo, cuerpo))
+    return [a for a in avisos if a[0] not in enviados]

@@ -3,7 +3,7 @@
 
 from datetime import date, datetime
 
-from .logica import Habito, Registro, Tarea
+from .logica import Bloque, Habito, Registro, Tarea
 
 SCHEMA = """
 -- Hábitos: algo que se hace ciertos días de la semana, con una meta diaria
@@ -62,6 +62,23 @@ CREATE TABLE IF NOT EXISTS rutina_objetivos (
     peso_objetivo REAL
 );
 
+-- Agenda: bloques horarios que se repiten ciertos días (`dias`) o son de un
+-- solo día (`fecha`). `aviso_min`: minutos antes de empezar para avisar (0 =
+-- a la hora, NULL = sin aviso).
+CREATE TABLE IF NOT EXISTS agenda_bloques (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    titulo TEXT NOT NULL,
+    icono TEXT NOT NULL DEFAULT '',
+    inicio TEXT NOT NULL,
+    fin TEXT NOT NULL,
+    dias TEXT NOT NULL DEFAULT '',
+    fecha TEXT,
+    aviso_min INTEGER,
+    notas TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_agenda_usuario ON agenda_bloques (usuario_id);
 CREATE INDEX IF NOT EXISTS idx_habitos_usuario ON habitos (usuario_id);
 CREATE INDEX IF NOT EXISTS idx_tareas_usuario ON tareas (usuario_id);
 """
@@ -281,3 +298,54 @@ def set_objetivos(conn, usuario: int, sueno_horas: float, peso_objetivo: float |
         (usuario, sueno_horas, peso_objetivo),
     )
     conn.commit()
+
+
+# --- Agenda ------------------------------------------------------------------
+
+def _bloque(row) -> Bloque:
+    return Bloque(
+        id=row["id"],
+        titulo=row["titulo"],
+        inicio=row["inicio"],
+        fin=row["fin"],
+        dias=tuple(int(d) for d in row["dias"].split(",") if d != ""),
+        fecha=date.fromisoformat(row["fecha"]) if row["fecha"] else None,
+        aviso_min=row["aviso_min"],
+        icono=row["icono"],
+        notas=row["notas"],
+    )
+
+
+def get_bloques(conn, usuario: int) -> list[Bloque]:
+    rows = conn.execute("SELECT * FROM agenda_bloques WHERE usuario_id = ? ORDER BY inicio, id", (usuario,)).fetchall()
+    return [_bloque(r) for r in rows]
+
+
+def _valores_bloque(titulo, icono, inicio, fin, dias, fecha, aviso_min, notas) -> tuple:
+    return (titulo, icono, inicio, fin, ",".join(map(str, dias)), fecha.isoformat() if fecha else None, aviso_min, notas)
+
+
+def add_bloque(conn, usuario: int, *valores) -> int:
+    cursor = conn.execute(
+        "INSERT INTO agenda_bloques (titulo, icono, inicio, fin, dias, fecha, aviso_min, notas, usuario_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (*_valores_bloque(*valores), usuario),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def update_bloque(conn, usuario: int, bloque_id: int, *valores) -> bool:
+    cursor = conn.execute(
+        "UPDATE agenda_bloques SET titulo = ?, icono = ?, inicio = ?, fin = ?, dias = ?, fecha = ?, aviso_min = ?, "
+        "notas = ? WHERE id = ? AND usuario_id = ?",
+        (*_valores_bloque(*valores), bloque_id, usuario),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def delete_bloque(conn, usuario: int, bloque_id: int) -> bool:
+    cursor = conn.execute("DELETE FROM agenda_bloques WHERE id = ? AND usuario_id = ?", (bloque_id, usuario))
+    conn.commit()
+    return cursor.rowcount > 0

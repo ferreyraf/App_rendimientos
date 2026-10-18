@@ -1,0 +1,17 @@
+{# Bloques de hoy en lista (pantalla Hoy). Usa: bloques, actual, ahora. #}
+{% set minuto = ahora.hour * 60 + ahora.minute %}
+{% for b in bloques %}
+  <div class="agenda-fila {{ 'agenda-actual' if b is sameas actual }} {{ 'agenda-pasada' if b.minuto_fin <= minuto }}">
+    <span class="agenda-horario">{{ b.inicio }}<span class="muted">–{{ b.fin }}</span></span>
+    <span class="agenda-texto">
+      <strong>{% if b.icono %}{{ b.icono }} {% endif %}{{ b.titulo }}</strong>
+      {% if b.notas %}<span class="fila-config-detalle">{{ b.notas }}</span>{% endif %}
+    </span>
+    {% if b is sameas actual %}<span class="badge badge-actual">ahora</span>
+    {% elif b.aviso_min is not none and b.minuto_inicio > minuto %}<span class="agenda-aviso" title="Con aviso">🔔</span>{% endif %}
+  </div>
+{% else %}
+  <div class="vacio-panel">
+    <p>No tenés nada en la agenda para hoy. <a href="{{ url_for('rutina.agenda') }}">Armá tu día</a> con bloques como "Trabajo", "Gym" o "Estudio".</p>
+  </div>
+{% endfor %}

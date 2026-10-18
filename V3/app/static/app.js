@@ -346,6 +346,7 @@
         guardar.textContent = textos.guardar;
         panel.querySelectorAll("[data-solo-edicion]").forEach(function (el) { el.hidden = true; });
         marcar(null);
+        form.dispatchEvent(new Event("panel:actualizado"));
       }
 
       function editar(datos, fila) {
@@ -361,6 +362,7 @@
           if (el.dataset.texto) el.textContent = datos[el.dataset.texto];
         });
         marcar(fila);
+        form.dispatchEvent(new Event("panel:actualizado"));
         var primero = form.querySelector("input:not([type=hidden]):not([type=checkbox]), textarea");
         if (primero) primero.focus();
       }

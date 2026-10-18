@@ -126,6 +126,11 @@
   box-sizing: border-box;
 }
 
+/* `hidden` siempre oculta, aunque la clase del elemento le dé otro display. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 0.9375rem;
@@ -2151,7 +2156,7 @@ table,
 
 /* --- Botones con degradé y brillo --- */
 
-button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not(.habito-check):not(.tarea-texto):not([role="tab"]),
+button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not(.habito-check):not(.tarea-texto):not(.agenda-bloque):not([role="tab"]),
 .boton-primario {
   background: var(--button-bg);
   background-size: 160% 160%;
@@ -2159,7 +2164,7 @@ button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro
   transition: background-position 0.4s ease, box-shadow 0.25s ease, transform 0.15s ease;
 }
 
-button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not(.habito-check):not(.tarea-texto):not([role="tab"]):hover,
+button:not(.fila-config):not(.filtro):not(.btn-secondary):not(.btn-texto-peligro):not(.btn-icono):not(.flash-close):not(.nav-toggle):not(.theme-toggle):not(.carrusel-flecha):not(.habito-check):not(.tarea-texto):not(.agenda-bloque):not([role="tab"]):hover,
 .boton-primario:hover {
   filter: none;
   background-position: 100% 50%;
@@ -3786,4 +3791,218 @@ td.nota-corta {
   .registro-fila {
     grid-template-columns: 1fr;
   }
+}
+
+/* --- Rutina: agenda --- */
+
+.linea-tiempo {
+  flex: 1 1 auto;
+  min-height: 320px;
+  display: grid;
+  grid-template-columns: 3.2rem minmax(0, 1fr);
+  padding: 8px 18px 14px;
+}
+
+.linea-horas {
+  position: relative;
+}
+
+.linea-horas span {
+  position: absolute;
+  right: 8px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.linea-pista {
+  position: relative;
+  border-left: 1px solid var(--gridline);
+}
+
+.linea-guia {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--gridline);
+}
+
+.linea-ahora {
+  position: absolute;
+  z-index: 2;
+  left: -5px;
+  right: 0;
+  border-top: 2px solid var(--negative);
+  pointer-events: none;
+}
+
+.linea-ahora::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--negative);
+}
+
+.linea-vacia {
+  position: absolute;
+  inset: 40% 0 auto;
+  text-align: center;
+}
+
+/* Un bloque: tarjeta posicionada por su horario (top/alto en % del día). */
+button.agenda-bloque {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 1px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 4px 8px;
+  border: 2px solid var(--surface);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+button.agenda-bloque:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--accent) 26%, var(--surface));
+}
+
+button.agenda-bloque[aria-current="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.agenda-bloque > * {
+  flex-shrink: 0;
+}
+
+.agenda-bloque strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.agenda-bloque-hora {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+/* Bloques cortos: título y hora en una línea. */
+.agenda-corto {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.agenda-actual.agenda-bloque {
+  background: color-mix(in srgb, var(--accent) 32%, var(--surface));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.agenda-pasada.agenda-bloque {
+  opacity: 0.55;
+}
+
+.agenda-aviso {
+  font-size: 0.75rem;
+}
+
+/* Semana: 7 columnas con la misma escala de horas. */
+.linea-semana {
+  grid-template-columns: 3.2rem repeat(7, minmax(0, 1fr));
+}
+
+.linea-dia {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.linea-cabecera {
+  flex: 0 0 2.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.linea-dia-hoy .linea-cabecera {
+  color: var(--accent-text);
+}
+
+.linea-dia-hoy .linea-pista {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.linea-dia .linea-pista {
+  flex: 1 1 auto;
+}
+
+.linea-semana .agenda-bloque {
+  padding: 2px 4px;
+  border-left-width: 3px;
+  font-size: 0.6875rem;
+}
+
+.linea-semana .agenda-bloque-hora {
+  display: none;
+}
+
+/* Lista de la agenda (pantalla Hoy y "Todos los bloques"). */
+.agenda-fila {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 6px 2px;
+  border-top: 1px solid var(--gridline);
+}
+
+.agenda-horario {
+  flex: 0 0 6.6rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.agenda-texto {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.agenda-fila.agenda-actual {
+  padding-left: 10px;
+  padding-right: 10px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.agenda-fila.agenda-pasada {
+  opacity: 0.5;
 }

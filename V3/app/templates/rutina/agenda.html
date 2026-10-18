@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Agenda</h1>
+    <p class="subtitle">Tu día en bloques. Tocá un bloque para editarlo; los que tienen 🔔 te avisan antes de empezar.</p>
+  </div>
+  <nav class="mes-selector" aria-label="Cambiar de día">
+    <a class="boton-icono" href="{{ url_for('rutina.agenda', fecha=anterior) }}" aria-label="Día anterior">‹</a>
+    <span class="mes-actual">{{ nombre_fecha }}</span>
+    <a class="boton-icono" href="{{ url_for('rutina.agenda', fecha=siguiente_dia) }}" aria-label="Día siguiente">›</a>
+  </nav>
+</header>
+
+<section class="kpi-row" aria-label="Tu agenda">
+  <div class="stat-tile">
+    <p class="stat-label">Ahora</p>
+    <p class="stat-value">{% if actual %}{{ actual.icono }} {{ actual.titulo }}{% else %}Libre{% endif %}</p>
+    <p class="stat-note">{% if actual %}hasta las {{ actual.fin }}{% else %}sin nada agendado{% endif %}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Después</p>
+    <p class="stat-value">{% if siguiente %}{{ siguiente.icono }} {{ siguiente.titulo }}{% else %}—{% endif %}</p>
+    <p class="stat-note">{% if siguiente %}a las {{ siguiente.inicio }} · en {{ minutos_para_siguiente // 60 ~ ' h ' if minutos_para_siguiente >= 60 }}{{ minutos_para_siguiente % 60 }} min{% else %}nada más por hoy{% endif %}</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">{{ "Hoy" if fecha == hoy else nombre_fecha }}</p>
+    <p class="stat-value">{{ bloques_dia|length }} bloque{{ 's' if bloques_dia|length != 1 }}</p>
+    <p class="stat-note">{{ fmt(horas_dia, 1, " h") }} planificadas</p>
+  </div>
+  <div class="stat-tile">
+    <p class="stat-label">Esta semana</p>
+    <p class="stat-value">{{ fmt(horas_semana, 1, " h") }}</p>
+    <p class="stat-note">planificadas de lunes a domingo</p>
+  </div>
+</section>
+
+{% macro columna(items) %}
+  {% for it in items %}
+    <button type="button" class="agenda-bloque {{ 'agenda-actual' if it.actual }} {{ 'agenda-pasada' if it.pasado }} {{ 'agenda-corto' if it.b.duracion <= 60 }}"
+            style="top: {{ '%.3f'|format(it.top) }}%; height: {{ '%.3f'|format(it.alto) }}%; left: {{ '%.3f'|format(it.izq) }}%; width: {{ '%.3f'|format(it.ancho) }}%"
+            data-editar='{{ it.edicion }}' data-panel="panel-bloque"
+            title="{{ it.b.inicio }}–{{ it.b.fin }} · {{ it.b.titulo }}">
+      <strong>{% if it.b.icono %}{{ it.b.icono }} {% endif %}{{ it.b.titulo }}{% if it.b.aviso_min is not none %} <span class="agenda-aviso">🔔</span>{% endif %}</strong>
+      <span class="agenda-bloque-hora">{{ it.b.inicio }}–{{ it.b.fin }}</span>
+    </button>
+  {% endfor %}
+{% endmacro %}
+
+<div class="config-split llenar">
+  <section class="config-lista carrusel" data-carrusel="agenda" aria-label="Agenda">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="Día">
+        <div class="linea-tiempo">
+          <div class="linea-horas">
+            {% for h in horas %}<span style="top: {{ '%.3f'|format(h.top) }}%">{{ h.hora }}</span>{% endfor %}
+          </div>
+          <div class="linea-pista">
+            {% for h in horas %}<span class="linea-guia" style="top: {{ '%.3f'|format(h.top) }}%"></span>{% endfor %}
+            {{ columna(columna_dia) }}
+            {% if fecha == hoy and ahora_top is not none %}<span class="linea-ahora" style="top: {{ '%.3f'|format(ahora_top) }}%" title="Ahora {{ ahora.strftime('%H:%M') }}"></span>{% endif %}
+            {% if not columna_dia %}<p class="vacio linea-vacia">Nada agendado para este día. Agregá un bloque con el formulario.</p>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="carrusel-slide" data-titulo="Semana">
+        <div class="linea-tiempo linea-semana">
+          <div class="linea-horas">
+            <span class="linea-cabecera"></span>
+            {% for h in horas %}<span style="top: calc(2.4rem + (100% - 2.4rem) * {{ '%.5f'|format(h.top / 100) }})">{{ h.hora }}</span>{% endfor %}
+          </div>
+          {% for d in semana %}
+            <div class="linea-dia {{ 'linea-dia-hoy' if d.dia == hoy }}">
+              <a class="linea-cabecera" href="{{ url_for('rutina.agenda', fecha=d.dia.isoformat()) }}">{{ dias_cortos[d.dia.weekday()] }} <span class="muted">{{ d.dia.day }}</span></a>
+              <div class="linea-pista">
+                {% for h in horas %}<span class="linea-guia" style="top: {{ '%.3f'|format(h.top) }}%"></span>{% endfor %}
+                {{ columna(d.columna) }}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="carrusel-slide" data-titulo="Todos los bloques">
+        {% for b in lista %}
+          <button type="button" class="fila-config" data-editar='{{ edicion[b.id] }}' data-panel="panel-bloque">
+            <span class="agenda-horario">{{ b.inicio }}<span class="muted">–{{ b.fin }}</span></span>
+            <span class="fila-config-principal">
+              <strong>{% if b.icono %}{{ b.icono }} {% endif %}{{ b.titulo }}</strong>
+              <span class="fila-config-detalle">{{ b.descripcion_cuando }}{% if b.notas %} · {{ b.notas }}{% endif %}</span>
+            </span>
+            <span class="fila-config-aumento">{{ avisos[b.aviso_min|string] if b.aviso_min is not none else 'Sin aviso' }}</span>
+          </button>
+        {% else %}
+          <p class="vacio lista-vacia">Todavía no tenés bloques. Empezá por lo fijo de tu semana: trabajo, estudio, gimnasio.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel-edicion" id="panel-bloque" data-panel-edicion aria-labelledby="panel-bloque-titulo">
+    <div class="panel-cabecera">
+      <div>
+        <span class="panel-modo" data-panel-modo>Nuevo bloque</span>
+        <h2 id="panel-bloque-titulo" data-panel-titulo>Agregar bloque</h2>
+      </div>
+      <button type="button" class="btn-icono" data-panel-cerrar data-solo-edicion aria-label="Cerrar y volver a agregar" hidden>×</button>
+    </div>
+    <form method="post" action="{{ url_for('rutina.crear_bloque') }}" class="panel-form" id="form-bloque">
+      <input type="hidden" name="volver" value="{{ request.full_path.rstrip('?') }}">
+      <div class="campos-dobles campos-nombre">
+        <div class="campo campo-icono">
+          <label for="bloque-icono">Ícono</label>
+          <input id="bloque-icono" type="text" name="icono" maxlength="8" placeholder="💼">
+        </div>
+        <div class="campo">
+          <label for="bloque-titulo">Qué</label>
+          <input id="bloque-titulo" type="text" name="titulo" maxlength="60" required placeholder="Ej. Trabajo, Gym, Estudio">
+        </div>
+      </div>
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="bloque-inicio">Desde</label>
+          <input id="bloque-inicio" type="time" name="inicio" required>
+        </div>
+        <div class="campo">
+          <label for="bloque-fin">Hasta</label>
+          <input id="bloque-fin" type="time" name="fin" required>
+        </div>
+      </div>
+      <fieldset class="panel-grupo">
+        <legend>Cuándo</legend>
+        <div class="segmentado" role="radiogroup" aria-label="Se repite o es un solo día">
+          <label><input type="radio" name="tipo" value="semanal" checked><span>Se repite</span></label>
+          <label><input type="radio" name="tipo" value="puntual"><span>Un solo día</span></label>
+        </div>
+        <div class="selector-dias" data-solo-tipo="semanal">
+          {% for d in dias_cortos %}
+            <label><input type="checkbox" name="dias" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 < 5 }}><span>{{ d }}</span></label>
+          {% endfor %}
+        </div>
+        <div class="campo" data-solo-tipo="puntual" hidden>
+          <label for="bloque-fecha">Día</label>
+          <input id="bloque-fecha" type="date" name="fecha" value="{{ fecha.isoformat() }}">
+        </div>
+      </fieldset>
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="bloque-aviso">Aviso</label>
+          <select id="bloque-aviso" name="aviso_min" title="Lo muestra la app de escritorio">
+            {% for valor, texto in avisos.items() %}<option value="{{ valor }}" {{ 'selected' if valor == '10' }}>{{ texto }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="bloque-notas">Notas</label>
+          <input id="bloque-notas" type="text" name="notas" maxlength="200" placeholder="Opcional">
+        </div>
+      </div>
+      <div class="panel-acciones">
+        <button type="submit" class="btn-primary" data-guardar>Agregar</button>
+        <button type="button" class="btn-secondary" data-panel-cerrar data-solo-edicion hidden>Cancelar</button>
+        <button type="submit" class="btn-texto-peligro" formnovalidate data-solo-edicion data-url="url_eliminar" data-confirmar="¿Eliminar este bloque de la agenda?" hidden>Eliminar</button>
+      </div>
+    </form>
+  </aside>
+</div>
+
+<script>
+  // "Se repite" muestra los días; "Un solo día", la fecha. También al cargar
+  // un bloque para editar (el panel avisa con "panel:actualizado").
+  (function () {
+    const form = document.getElementById('form-bloque');
+    const actualizar = () => {
+      const tipo = form.querySelector('input[name="tipo"]:checked').value;
+      form.querySelectorAll('[data-solo-tipo]').forEach((el) => { el.hidden = el.dataset.soloTipo !== tipo; });
+    };
+    form.addEventListener('change', actualizar);
+    form.addEventListener('panel:actualizado', actualizar);
+    actualizar();
+  })();
+</script>
+{% endblock %}

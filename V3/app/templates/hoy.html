@@ -5,6 +5,11 @@
     <h1>{{ saludo }}</h1>
     <p class="subtitle">{{ fecha_larga }}</p>
   </div>
+  {% if chips %}
+  <div class="header-acciones" id="hoy-chips" data-refrescable>
+    {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+  </div>
+  {% endif %}
 </header>
 
 {% include "_alertas.html" %}

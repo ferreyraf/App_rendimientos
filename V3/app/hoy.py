@@ -52,6 +52,7 @@ class AporteHoy:
     paneles_dia: list[Panel] = field(default_factory=list)
     paneles_estado: list[Panel] = field(default_factory=list)
     alertas: list[dict] = field(default_factory=list)
+    chips: list[str] = field(default_factory=list)  # avisos cortos junto al saludo
 
 
 def panel(titulo: str, plantilla: str, **contexto) -> Panel:
@@ -144,6 +145,7 @@ def inicio():
         total.paneles_dia += parte.paneles_dia
         total.paneles_estado += parte.paneles_estado
         total.alertas += parte.alertas
+        total.chips += parte.chips
 
     return render_template(
         "hoy.html",
@@ -154,4 +156,5 @@ def inicio():
         paneles_dia=total.paneles_dia,
         paneles_estado=total.paneles_estado,
         alertas=total.alertas,
+        chips=total.chips,
     )

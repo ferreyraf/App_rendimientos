@@ -1,8 +1,9 @@
-"""Recordatorios del rulo como notificaciones del sistema.
+"""Recordatorios como notificaciones del sistema.
 
 Corre en un hilo de la app de escritorio: unos minutos antes de cada
-captura avisa a qué billetera mover la plata (y otra vez a la hora justa), y
-a la mañana avisa los pagos que vencen ese día. Las preferencias (activar,
+captura avisa a qué billetera mover la plata (y otra vez a la hora justa), a
+la mañana avisa los pagos que vencen ese día, y avisa los bloques de la
+agenda según el aviso de cada uno. Las preferencias (activar,
 minutos de anticipación) están en `preferencias`.
 """
 
@@ -133,6 +134,19 @@ def avisos_pendientes(ahora: datetime, wallets, pagos_de_hoy, prefs: dict, envia
 class Recordatorios(threading.Thread):
     """Revisa cada 20 segundos si hay algo para avisar."""
 
+    def _avisos_agenda(self, ahora: datetime) -> list[tuple[str, str, str]]:
+        """Bloques de la agenda de hoy que tienen que avisar ahora. La app de
+        escritorio es de una persona: usa el usuario local."""
+        from .rutina import datos as datos_rutina
+        from .rutina.logica import avisos_agenda, bloques_del_dia
+
+        conn = _conectar()
+        try:
+            bloques = datos_rutina.get_bloques(conn, db.usuario_actual())
+        finally:
+            conn.close()
+        return avisos_agenda(bloques_del_dia(bloques, ahora.date()), ahora, self.enviados)
+
     def __init__(self, icono: str | None = None):
         super().__init__(daemon=True, name="recordatorios")
         self.icono = icono
@@ -145,7 +159,7 @@ class Recordatorios(threading.Thread):
         while True:
             try:
                 prefs = preferencias.cargar()
-                if prefs["avisos_rulo"] or prefs["avisos_pagos"]:
+                if prefs["avisos_rulo"] or prefs["avisos_pagos"] or prefs["avisos_agenda"]:
                     ahora = datetime.now()
                     conn = _conectar()
                     try:
@@ -158,7 +172,10 @@ class Recordatorios(threading.Thread):
                         ]
                     finally:
                         conn.close()
-                    for clave, titulo, cuerpo in avisos_pendientes(ahora, wallets, pagos, prefs, self.enviados):
+                    pendientes = avisos_pendientes(ahora, wallets, pagos, prefs, self.enviados)
+                    if prefs["avisos_agenda"]:
+                        pendientes += self._avisos_agenda(ahora)
+                    for clave, titulo, cuerpo in pendientes:
                         self.enviados.add(clave)
                         notificar(titulo, cuerpo, self.icono)
             except Exception:

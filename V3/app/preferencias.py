@@ -18,6 +18,8 @@ POR_DEFECTO = {
     "avisos_minutos": 10,
     # Aviso a la mañana con los pagos que vencen ese día.
     "avisos_pagos": True,
+    # Avisos de los bloques de la agenda (cada bloque elige cuánto antes).
+    "avisos_agenda": True,
     # Cerrar la ventana deja la app funcionando (para que lleguen los avisos).
     "segundo_plano": True,
     # Sincronización entre PCs vía una carpeta compartida (ej. Google Drive).

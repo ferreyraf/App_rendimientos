@@ -423,7 +423,7 @@
 
 <section class="panel-pestana" role="tabpanel" id="panel-tab-avisos" aria-labelledby="tab-avisos" hidden>
   <section class="chart-card avisos-card">
-    <h2>Recordatorios del rulo</h2>
+    <h2>Recordatorios</h2>
     <p class="subtitle">La app de escritorio te avisa con una notificación del sistema cuándo mover la plata y qué pagos vencen. Funcionan mientras la app esté abierta o en segundo plano.</p>
     <form method="post" action="{{ url_for('main.guardar_avisos') }}" class="panel-form">
       <div class="panel-grupo">
@@ -436,6 +436,10 @@
       </div>
       <div class="panel-grupo">
         <label class="check"><input type="checkbox" name="avisos_pagos" {{ "checked" if prefs.avisos_pagos }}> Avisarme a la mañana los pagos que vencen ese día</label>
+      </div>
+      <div class="panel-grupo">
+        <label class="check"><input type="checkbox" name="avisos_agenda" {{ "checked" if prefs.avisos_agenda }}> Avisarme de los bloques de la agenda</label>
+        <span class="campo-ayuda">Cada bloque elige cuánto antes avisa (o si no avisa) desde <a href="{{ url_for('rutina.agenda') }}">Agenda</a>.</span>
       </div>
       <div class="panel-grupo">
         <label class="check"><input type="checkbox" name="segundo_plano" {{ "checked" if prefs.segundo_plano }}> Al cerrar la ventana, seguir funcionando en segundo plano</label>

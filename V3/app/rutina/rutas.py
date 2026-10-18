@@ -19,8 +19,10 @@ from .logica import (
     CALIDADES,
     DIAS_CORTOS,
     PRIORIDADES,
+    bloques_del_dia,
     clasificar_tareas,
     cumplimiento,
+    estado_agenda,
     horas_de_sueno,
     media_movil,
     mejor_racha,
@@ -28,6 +30,7 @@ from .logica import (
     progreso_del_dia,
     promedio,
     racha,
+    ubicar_bloques,
     valor_hace,
 )
 
@@ -36,6 +39,18 @@ bp = Blueprint("rutina", __name__, url_prefix="/rutina")
 MAX_NOMBRE = 60
 MAX_TITULO = 120
 MAX_NOTAS = 1000
+
+
+def _fecha_pedida(hoy: date, permitir_futuro: bool = False) -> date:
+    """La fecha de ?fecha= (hoy si falta, es inválida o está a más de 10
+    años: más allá, calcular el día anterior/siguiente se sale de rango)."""
+    try:
+        fecha = date.fromisoformat(request.args.get("fecha", ""))
+    except ValueError:
+        return hoy
+    if abs((fecha - hoy).days) > 3660:
+        return hoy
+    return fecha if permitir_futuro else min(fecha, hoy)
 
 
 def _fecha_corta(fecha: date, hoy: date) -> str:
@@ -73,11 +88,7 @@ def habitos():
     conn = db.get_db()
     usuario = db.usuario_actual()
     hoy = date.today()
-    try:
-        fecha = date.fromisoformat(request.args.get("fecha", ""))
-    except ValueError:
-        fecha = hoy
-    fecha = min(fecha, hoy)
+    fecha = _fecha_pedida(hoy)
 
     todos = datos.get_habitos(conn, usuario)
     if not todos:
@@ -419,10 +430,7 @@ def registro():
     conn = db.get_db()
     usuario = db.usuario_actual()
     hoy = date.today()
-    try:
-        fecha = min(date.fromisoformat(request.args.get("fecha", "")), hoy)
-    except ValueError:
-        fecha = hoy
+    fecha = _fecha_pedida(hoy)
 
     objetivos = datos.get_objetivos(conn, usuario)
     registros = datos.get_registros(conn, usuario, hoy - timedelta(days=89), hoy)
@@ -509,6 +517,164 @@ def guardar_objetivos():
     return redirect(volver)
 
 
+# --- Agenda --------------------------------------------------------------------
+
+AVISOS = {"": "Sin aviso", "0": "A la hora", "5": "5 min antes", "10": "10 min antes",
+          "15": "15 min antes", "30": "30 min antes", "60": "1 hora antes"}
+
+
+def _parse_bloque(form) -> tuple:
+    titulo = (form.get("titulo") or "").strip()
+    if not titulo:
+        raise ValueError("Poné un nombre para el bloque.")
+    if len(titulo) > MAX_NOMBRE:
+        raise ValueError(f"El nombre puede tener hasta {MAX_NOMBRE} caracteres.")
+    icono = (form.get("icono") or "").strip()[:8]
+    inicio = _hora(form.get("inicio") or "", "la hora de inicio")
+    fin = _hora(form.get("fin") or "", "la hora de fin")
+    if fin <= inicio:
+        raise ValueError("El bloque tiene que terminar después de empezar (si pasa la medianoche, dividilo en dos).")
+    if form.get("tipo") == "puntual":
+        dias, fecha = [], _fecha(form.get("fecha") or "", "el día")
+    else:
+        dias = sorted({_entero(d, "los días") for d in form.getlist("dias")})
+        if not dias or any(not 0 <= d <= 6 for d in dias):
+            raise ValueError("Elegí al menos un día de la semana.")
+        fecha = None
+    aviso_raw = (form.get("aviso_min") or "").strip()
+    if aviso_raw not in AVISOS:
+        raise ValueError("Opción de aviso inválida.")
+    aviso = int(aviso_raw) if aviso_raw else None
+    notas = (form.get("notas") or "").strip()[:200]
+    return titulo, icono, inicio, fin, dias, fecha, aviso, notas
+
+
+def _datos_edicion_bloque(b) -> str:
+    return json.dumps({
+        "titulo": b.titulo,
+        "url_editar": url_for("rutina.editar_bloque", bloque_id=b.id),
+        "url_eliminar": url_for("rutina.eliminar_bloque", bloque_id=b.id),
+        "campos": {
+            "titulo": b.titulo, "icono": b.icono, "inicio": b.inicio, "fin": b.fin,
+            "tipo": "puntual" if b.fecha else "semanal", "dias": list(b.dias),
+            "fecha": b.fecha.isoformat() if b.fecha else "",
+            "aviso_min": "" if b.aviso_min is None else str(b.aviso_min), "notas": b.notas,
+        },
+    }, ensure_ascii=False)
+
+
+def _rango_horas(bloques) -> tuple[int, int]:
+    """Horas (enteras) que muestra la línea de tiempo: de 7 a 22 como mínimo,
+    estirado para que entren todos los bloques."""
+    desde = min([7] + [b.minuto_inicio // 60 for b in bloques])
+    hasta = max([22] + [-(-b.minuto_fin // 60) for b in bloques])
+    return desde, hasta
+
+
+def _columna(del_dia, desde: int, hasta: int, edicion: dict, ahora: datetime, dia: date) -> list[dict]:
+    """Bloques de un día con su posición (en % del alto/ancho de la columna)."""
+    total = (hasta - desde) * 60
+    actual, _ = estado_agenda(del_dia, ahora) if dia == ahora.date() else (None, None)
+    minuto_ahora = ahora.hour * 60 + ahora.minute
+    return [
+        {
+            "b": b,
+            "top": (b.minuto_inicio - desde * 60) * 100 / total,
+            "alto": b.duracion * 100 / total,
+            "izq": carril * 100 / carriles,
+            "ancho": 100 / carriles,
+            "edicion": edicion[b.id],
+            "actual": b is actual,
+            "pasado": dia < ahora.date() or (dia == ahora.date() and b.minuto_fin <= minuto_ahora),
+        }
+        for b, carril, carriles in ubicar_bloques(del_dia)
+    ]
+
+
+@bp.route("/agenda")
+def agenda():
+    conn = db.get_db()
+    ahora = datetime.now()
+    hoy = ahora.date()
+    fecha = _fecha_pedida(hoy, permitir_futuro=True)
+
+    bloques = datos.get_bloques(conn, db.usuario_actual())
+    edicion = {b.id: _datos_edicion_bloque(b) for b in bloques}
+    lunes = fecha - timedelta(days=fecha.weekday())
+    dias_semana = [lunes + timedelta(days=i) for i in range(7)]
+    por_dia = {d: bloques_del_dia(bloques, d) for d in dias_semana}
+    por_dia.setdefault(fecha, bloques_del_dia(bloques, fecha))
+    hoy_bloques = bloques_del_dia(bloques, hoy)
+    desde, hasta = _rango_horas([b for lista in por_dia.values() for b in lista])
+    actual, siguiente = estado_agenda(hoy_bloques, ahora)
+    minuto_ahora = ahora.hour * 60 + ahora.minute
+
+    return render_template(
+        "rutina/agenda.html",
+        hoy=hoy,
+        ahora=ahora,
+        fecha=fecha,
+        nombre_fecha=_fecha_corta(fecha, hoy) if abs((hoy - fecha).days) <= 1 else
+            f"{DIAS_CORTOS[fecha.weekday()]} {fecha.strftime('%d/%m/%Y')}",
+        anterior=(fecha - timedelta(days=1)).isoformat(),
+        siguiente_dia=(fecha + timedelta(days=1)).isoformat(),
+        actual=actual,
+        siguiente=siguiente,
+        minutos_para_siguiente=(siguiente.minuto_inicio - minuto_ahora) if siguiente else None,
+        bloques_dia=por_dia[fecha],
+        horas_dia=sum(b.duracion for b in por_dia[fecha]) / 60,
+        horas_semana=sum(b.duracion for d in dias_semana for b in por_dia[d]) / 60,
+        horas=[{"hora": f"{h:02d}:00", "top": (h - desde) * 100 / (hasta - desde)} for h in range(desde, hasta + 1)],
+        ahora_top=(minuto_ahora - desde * 60) * 100 / ((hasta - desde) * 60) if desde * 60 <= minuto_ahora <= hasta * 60 else None,
+        columna_dia=_columna(por_dia[fecha], desde, hasta, edicion, ahora, fecha),
+        semana=[{"dia": d, "columna": _columna(por_dia[d], desde, hasta, edicion, ahora, d)} for d in dias_semana],
+        lista=sorted(
+            (b for b in bloques if not b.fecha or b.fecha >= hoy),
+            key=lambda b: (b.fecha is not None, b.fecha or date.min, b.inicio),
+        ),
+        edicion=edicion,
+        dias_cortos=DIAS_CORTOS,
+        avisos=AVISOS,
+        fmt=_fmt,
+        fecha_corta=_fecha_corta,
+    )
+
+
+@bp.route("/agenda", methods=["POST"])
+def crear_bloque():
+    try:
+        valores = _parse_bloque(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        datos.add_bloque(db.get_db(), db.usuario_actual(), *valores)
+        flash(f"Bloque \"{valores[0]}\" agregado.", "success")
+    return redirect(ruta_interna(request.form.get("volver"), url_for("rutina.agenda")))
+
+
+@bp.route("/agenda/<int:bloque_id>/editar", methods=["POST"])
+def editar_bloque(bloque_id):
+    try:
+        valores = _parse_bloque(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        if datos.update_bloque(db.get_db(), db.usuario_actual(), bloque_id, *valores):
+            flash("Bloque actualizado.", "success")
+        else:
+            flash("Ese bloque ya no existe.", "error")
+    return redirect(ruta_interna(request.form.get("volver"), url_for("rutina.agenda")))
+
+
+@bp.route("/agenda/<int:bloque_id>/eliminar", methods=["POST"])
+def eliminar_bloque(bloque_id):
+    if datos.delete_bloque(db.get_db(), db.usuario_actual(), bloque_id):
+        flash("Bloque eliminado.", "success")
+    else:
+        flash("Ese bloque ya no existe.", "error")
+    return redirect(ruta_interna(request.form.get("volver"), url_for("rutina.agenda")))
+
+
 # --- Aporte a la pantalla Hoy --------------------------------------------------
 
 def aporte_hoy(conn, ahora: datetime):
@@ -560,9 +726,19 @@ def aporte_hoy(conn, ahora: datetime):
         url=url_for("rutina.registro"),
     ))
 
+    del_dia = bloques_del_dia(datos.get_bloques(conn, usuario), hoy)
+    actual, siguiente = estado_agenda(del_dia, ahora)
+    chips = []
+    if actual:
+        chips.append(f"Ahora: {actual.icono} {actual.titulo} hasta las {actual.fin}".replace("  ", " "))
+    if siguiente:
+        chips.append(f"Después: {siguiente.icono} {siguiente.titulo} a las {siguiente.inicio}".replace("  ", " "))
+
     return AporteHoy(
         indicadores=indicadores,
+        chips=chips,
         paneles_dia=[
+            panel("Agenda", "rutina/_agenda_lista.html", bloques=del_dia, actual=actual, ahora=ahora),
             panel("Hábitos", "rutina/_checklist.html", items=items, fecha=hoy, volver=volver, en_hoy=True),
             panel("Cómo estás", "rutina/_registro_form.html", actual=registro_hoy, fecha=hoy, volver=volver,
                   compacto=True, animos=ANIMOS, calidades=CALIDADES),

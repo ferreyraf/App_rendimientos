@@ -1027,6 +1027,7 @@ def guardar_avisos():
         avisos_rulo=request.form.get("avisos_rulo") == "on",
         avisos_minutos=max(0, min(minutos, 120)),
         avisos_pagos=request.form.get("avisos_pagos") == "on",
+        avisos_agenda=request.form.get("avisos_agenda") == "on",
         segundo_plano=request.form.get("segundo_plano") == "on",
     )
     flash("Avisos guardados.", "success")
