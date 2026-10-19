@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Objetivos</h1>
+    <p class="subtitle">Cuántas calorías y macros apuntás a comer por día. Calculalos con tus datos y, si querés, ajustalos a mano.</p>
+  </div>
+</header>
+
+<section class="kpi-row" aria-label="Tus objetivos diarios">
+  {% for nombre, clave, unidad in [("Calorías", "kcal", "kcal"), ("Proteínas", "proteinas", "g"), ("Carbohidratos", "carbohidratos", "g"), ("Grasas", "grasas", "g")] %}
+    <div class="stat-tile">
+      <p class="stat-label">{{ nombre }} por día</p>
+      <p class="stat-value">{{ num(metas[clave]) ~ ' ' ~ unidad if metas else '—' }}</p>
+      <p class="stat-note">
+        {% if not metas %}Sin objetivo todavía
+        {% elif clave == 'kcal' %}{{ objetivos_tipo[perfil.objetivo][2] if perfil.objetivo else 'Puesto a mano' }}
+        {% else %}{{ (metas[clave] * (9 if clave == 'grasas' else 4) * 100 / metas.kcal)|round|int }} % de las calorías{% if perfil.peso %} · {{ num(metas[clave] / perfil.peso, 1) }} g/kg{% endif %}{% endif %}
+      </p>
+    </div>
+  {% endfor %}
+</section>
+
+<div class="config-split llenar objetivos-split">
+  <section class="chart-card objetivos-card" aria-labelledby="calc-titulo">
+    <h2 id="calc-titulo">Calcular</h2>
+    <p class="slide-meta">Estima lo que gastás por día (fórmula de Mifflin-St Jeor por tu nivel de actividad) y lo ajusta a tu objetivo. Proteínas y grasas van según tu peso; los carbohidratos completan las calorías. <strong>Reemplaza los objetivos actuales.</strong></p>
+    <form method="post" action="{{ url_for('alimentacion.calcular') }}" class="panel-form">
+      <div class="campos-dobles">
+        <div class="campo">
+          <span class="campo-etiqueta">Sexo</span>
+          <div class="segmentado" role="radiogroup" aria-label="Sexo">
+            <label><input type="radio" name="sexo" value="h" {{ 'checked' if perfil.sexo == 'h' }} required><span>Hombre</span></label>
+            <label><input type="radio" name="sexo" value="m" {{ 'checked' if perfil.sexo == 'm' }}><span>Mujer</span></label>
+          </div>
+        </div>
+        <div class="campo">
+          <label for="obj-nacimiento">Nacimiento{% if edad %} ({{ edad }} años){% endif %}</label>
+          <input id="obj-nacimiento" type="date" name="nacimiento" value="{{ perfil.nacimiento.isoformat() if perfil.nacimiento else '' }}" max="{{ hoy.isoformat() }}" required>
+        </div>
+      </div>
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="obj-altura">Altura (cm)</label>
+          <input id="obj-altura" type="number" name="altura_cm" step="0.5" min="100" max="250" value="{{ perfil.altura_cm if perfil.altura_cm else '' }}" required>
+        </div>
+        <div class="campo">
+          <label for="obj-peso">Peso (kg)</label>
+          <input id="obj-peso" type="number" name="peso" step="0.1" min="30" max="300" value="{{ peso_inicial if peso_inicial else '' }}" required>
+          {% if peso_registro %}<span class="campo-ayuda">Del registro diario del {{ peso_registro[1].strftime('%d/%m') }}.</span>{% endif %}
+        </div>
+      </div>
+      <div class="campo">
+        <label for="obj-actividad">Actividad</label>
+        <select id="obj-actividad" name="actividad" required>
+          {% for clave, (factor, nombre, ayuda) in actividades.items() %}
+            <option value="{{ clave }}" {{ 'selected' if perfil.actividad == clave or (not perfil.actividad and clave == 'moderado') }}>{{ nombre }}: {{ ayuda|lower }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <span class="campo-etiqueta">Objetivo</span>
+        <div class="segmentado" role="radiogroup" aria-label="Objetivo">
+          {% for clave, (ajuste, prot, nombre, ayuda) in objetivos_tipo.items() %}
+            <label title="{{ ayuda }}"><input type="radio" name="objetivo" value="{{ clave }}" {{ 'checked' if perfil.objetivo == clave or (not perfil.objetivo and clave == 'mantener') }}><span>{{ nombre }}</span></label>
+          {% endfor %}
+        </div>
+      </div>
+      {% if calculo %}
+        <p class="campo-ayuda">Con los datos guardados: en reposo gastás unas {{ num(calculo.basal) }} kcal y con tu actividad unas {{ num(calculo.mantenimiento) }} kcal por día. Sugerido: {{ num(calculo.kcal) }} kcal · P {{ calculo.proteinas }} · C {{ calculo.carbohidratos }} · G {{ calculo.grasas }} g.</p>
+      {% endif %}
+      <div class="panel-acciones"><button type="submit" class="btn-primary">Calcular y usar</button></div>
+    </form>
+  </section>
+
+  <section class="chart-card objetivos-card" aria-labelledby="manual-titulo">
+    <h2 id="manual-titulo">A mano</h2>
+    <p class="slide-meta">Si te los dio un nutricionista o querés retocar los calculados. Si dejás las calorías vacías, se calculan con las macros.</p>
+    <form method="post" action="{{ url_for('alimentacion.guardar_objetivos') }}" class="panel-form" id="form-metas">
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="meta-kcal">Calorías</label>
+          <input id="meta-kcal" type="number" name="kcal" step="10" min="800" max="10000" value="{{ metas.kcal|int if metas else '' }}">
+        </div>
+        <div class="campo">
+          <label for="meta-p">Proteínas (g)</label>
+          <input id="meta-p" type="number" name="proteinas" step="1" min="0" max="1000" value="{{ metas.proteinas|int if metas else '' }}" required>
+        </div>
+      </div>
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="meta-c">Carbohidratos (g)</label>
+          <input id="meta-c" type="number" name="carbohidratos" step="1" min="0" max="1000" value="{{ metas.carbohidratos|int if metas else '' }}" required>
+        </div>
+        <div class="campo">
+          <label for="meta-g">Grasas (g)</label>
+          <input id="meta-g" type="number" name="grasas" step="1" min="0" max="1000" value="{{ metas.grasas|int if metas else '' }}" required>
+        </div>
+      </div>
+      <p class="campo-ayuda" data-suma-macros></p>
+      <div class="panel-acciones"><button type="submit" class="btn-primary">Guardar objetivos</button></div>
+    </form>
+  </section>
+</div>
+
+<script>
+  // Cuántas calorías suman las macros (4 kcal por g de proteína y de
+  // carbohidrato, 9 por g de grasa), para ver si cierran con las calorías.
+  (function () {
+    const form = document.getElementById('form-metas');
+    const ayuda = form.querySelector('[data-suma-macros]');
+    const valor = (n) => parseFloat(form.querySelector(`[name="${n}"]`).value) || 0;
+    const num = (v) => v.toLocaleString('es-AR', { maximumFractionDigits: 0 });
+    const actualizar = () => {
+      const suma = valor('proteinas') * 4 + valor('carbohidratos') * 4 + valor('grasas') * 9;
+      const kcal = valor('kcal');
+      ayuda.textContent = suma ? `Tus macros suman ${num(suma)} kcal` + (kcal ? ` (${kcal >= suma ? 'faltan' : 'sobran'} ${num(Math.abs(kcal - suma))} para las calorías).` : '.') : '';
+    };
+    form.addEventListener('input', actualizar);
+    actualizar();
+  })();
+</script>
+{% endblock %}

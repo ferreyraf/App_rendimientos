@@ -194,11 +194,13 @@ def init_db():
     _seed_usuario_local(conn)
     # Tablas de las secciones nuevas (importadas acá: esos módulos no
     # dependen de db, pero db tampoco debería cargarlos al importarse).
+    from .alimentacion import datos as datos_alimentacion
     from .entrenamiento.datos import SCHEMA as SCHEMA_ENTRENAMIENTO
     from .rutina.datos import SCHEMA as SCHEMA_RUTINA
 
     conn.executescript(SCHEMA_RUTINA)
     conn.executescript(SCHEMA_ENTRENAMIENTO)
+    datos_alimentacion.crear_tablas(conn, USUARIO_LOCAL)
     _seed_wallets(conn)
     _migrate_legacy_egresos(conn)
     _migrate_dia_habil(conn)

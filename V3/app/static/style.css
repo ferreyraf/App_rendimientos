@@ -4446,3 +4446,111 @@ a.fila-config {
   color: var(--text-muted);
   font-weight: 500;
 }
+
+/* --- Alimentación --- */
+
+.segmentado label[hidden],
+[data-solo-modo][hidden] {
+  display: none;
+}
+
+.stat-meta {
+  font-size: 0.6em;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.macro-pista {
+  display: block;
+  height: 6px;
+  margin: 6px 0 4px;
+}
+
+.macro-pista .barra-relleno {
+  display: block;
+  height: 6px;
+}
+
+.barra-relleno.macro-pasado {
+  background: var(--negative);
+  box-shadow: none;
+}
+
+.comida-grupo + .comida-grupo {
+  margin-top: 6px;
+}
+
+.comida-cabecera {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 10px 20px 6px;
+}
+
+.comida-cabecera h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.comida-guardar {
+  margin-left: auto;
+  font-size: 0.8125rem;
+}
+
+.comida-guardar summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.comida-guardar summary::-webkit-details-marker {
+  display: none;
+}
+
+.comida-guardar-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.comida-guardar-form input {
+  min-width: 0;
+  flex: 1 1 160px;
+}
+
+.promedio-macros {
+  padding: 4px 0;
+}
+
+.objetivos-card {
+  flex: 1 1 380px;
+  min-width: 0;
+}
+
+.objetivos-split {
+  align-items: stretch;
+}
+
+/* Hoy: todos los indicadores en una fila (con Alimentación son 7 y la
+   grilla automática dejaba uno solo abajo). */
+@media (min-width: 901px) {
+  #hoy-indicadores {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  #hoy-indicadores .stat-tile {
+    min-width: 0;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  #hoy-indicadores .stat-value {
+    font-size: clamp(1rem, 1.35vw, 1.35rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

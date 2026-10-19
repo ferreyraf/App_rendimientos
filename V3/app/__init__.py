@@ -20,6 +20,7 @@ def create_app():
         db.init_db()
 
     from . import acceso
+    from .alimentacion.rutas import bp as bp_alimentacion
     from .hoy import bp as bp_hoy
     from .routes import bp
     from .entrenamiento.rutas import bp as bp_entrenamiento
@@ -29,6 +30,7 @@ def create_app():
     app.register_blueprint(bp_hoy)
     app.register_blueprint(bp_rutina)
     app.register_blueprint(bp_entrenamiento)
+    app.register_blueprint(bp_alimentacion)
     acceso.init_app(app)
     _register_error_handlers(app)
     app.add_template_filter(formato_ar, "ar")

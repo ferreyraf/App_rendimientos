@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Diario de comidas</h1>
+    <p class="subtitle">Anotá lo que comés: un alimento y cuánto (la app calcula las macros), las macros a mano o una comida frecuente. Tocá algo anotado para editarlo.</p>
+  </div>
+  <nav class="mes-selector" aria-label="Cambiar de día">
+    <a class="boton-icono" href="{{ url_for('alimentacion.diario', fecha=anterior) }}" aria-label="Día anterior">‹</a>
+    <span class="mes-actual">{{ nombre_fecha }}</span>
+    {% if siguiente %}<a class="boton-icono" href="{{ url_for('alimentacion.diario', fecha=siguiente) }}" aria-label="Día siguiente">›</a>
+    {% else %}<span class="boton-icono deshabilitado" aria-hidden="true">›</span>{% endif %}
+  </nav>
+</header>
+
+<section class="kpi-row" aria-label="Macros del día">
+  {% for m in avance %}
+    <div class="stat-tile">
+      <p class="stat-label">{{ m.nombre }}</p>
+      <p class="stat-value">{{ num(m.valor) }}{% if m.meta %}<span class="stat-meta"> / {{ num(m.meta) }}</span>{% endif %} {{ m.unidad }}</p>
+      {% if m.meta %}
+        <span class="barra-pista macro-pista"><span class="barra-relleno {{ 'macro-pasado' if m.pct > 110 }}" style="width: {{ [m.pct, 100]|min }}%"></span></span>
+        <p class="stat-note">{% if m.resta >= 0 %}Faltan {{ num(m.resta) }} {{ m.unidad }}{% else %}{{ num(-m.resta) }} {{ m.unidad }} arriba{% endif %} · {{ m.pct }} %</p>
+      {% elif loop.first %}
+        <p class="stat-note"><a href="{{ url_for('alimentacion.objetivos') }}">Poné tus objetivos</a></p>
+      {% else %}
+        <p class="stat-note">sin objetivo</p>
+      {% endif %}
+    </div>
+  {% endfor %}
+</section>
+
+<div class="config-split llenar">
+  <section class="config-lista carrusel" data-carrusel="alimentacion" aria-label="Tus comidas">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="{{ 'Hoy' if fecha == hoy else nombre_fecha }}">
+        {% for g in grupos %}
+          <div class="comida-grupo">
+            <div class="comida-cabecera">
+              <h3>{{ g.nombre }}</h3>
+              <span class="fila-config-detalle">{{ num(g.total.kcal) }} kcal · {{ resumen_macros(g.total) }} g</span>
+              <details class="comida-guardar">
+                <summary title="Guardar esta comida para cargarla entera otro día">☆ Guardar</summary>
+                <form method="post" action="{{ url_for('alimentacion.crear_frecuente') }}" class="comida-guardar-form">
+                  <input type="hidden" name="fecha" value="{{ fecha.isoformat() }}">
+                  <input type="hidden" name="comida" value="{{ g.clave }}">
+                  <input type="text" name="nombre" maxlength="60" required placeholder="Ej. {{ g.nombre }} de siempre" aria-label="Nombre de la comida frecuente">
+                  <button type="submit" class="btn-primary">Guardar</button>
+                </form>
+              </details>
+            </div>
+            {% for e in g.entradas %}
+              <button type="button" class="fila-config" data-editar='{{ edicion[e.id] }}' data-panel="panel-comida">
+                <span class="fila-config-principal">
+                  <strong>{{ e.nombre }}</strong>
+                  <span class="fila-config-detalle">{{ detalle(e) }} · {{ resumen_macros(e.macros) }} g</span>
+                </span>
+                <span class="fila-config-monto">{{ num(e.macros.kcal) }} kcal</span>
+              </button>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="vacio-panel"><p>{{ 'Todavía no anotaste nada hoy.' if fecha == hoy else 'No hay nada anotado ese día.' }} Usá el panel para cargar tu primera comida.</p></div>
+        {% endfor %}
+      </div>
+      <div class="carrusel-slide" data-titulo="Calorías">
+        <p class="slide-meta">Calorías de cada día, últimos 14 días.{% if graficos.meta_kcal %} La línea es tu objetivo.{% endif %}</p>
+        <div class="grafico-caja"><canvas id="kcalChart" role="img" aria-label="Calorías por día en los últimos 14 días"></canvas></div>
+      </div>
+      <div class="carrusel-slide" data-titulo="Proteínas">
+        <p class="slide-meta">Gramos de proteína de cada día, últimos 14 días.{% if graficos.meta_proteinas %} La línea es tu objetivo.{% endif %}</p>
+        <div class="grafico-caja"><canvas id="proteinasChart" role="img" aria-label="Proteínas por día en los últimos 14 días"></canvas></div>
+      </div>
+      <div class="carrusel-slide" data-titulo="Promedio">
+        {% if promedio7 %}
+          <p class="slide-meta">Promedio por día de los últimos 7 días (contando solo los {{ dias_cargados7 }} día{{ 's' if dias_cargados7 != 1 }} con algo anotado).</p>
+          <div class="promedio-macros">
+            {% for nombre, clave, unidad in [("Calorías", "kcal", "kcal"), ("Proteínas", "proteinas", "g"), ("Carbohidratos", "carbohidratos", "g"), ("Grasas", "grasas", "g")] %}
+              {% set valor = promedio7[clave] %}
+              {% set meta = metas[clave] if metas else none %}
+              <div class="barra-categoria">
+                <div class="barra-categoria-texto">
+                  <span>{{ nombre }}</span>
+                  <strong>{{ num(valor) }}{% if meta %} / {{ num(meta) }}{% endif %} {{ unidad }}</strong>
+                </div>
+                {% if meta %}<span class="barra-pista"><span class="barra-relleno" style="display: block; width: {{ [valor * 100 / meta, 100]|min }}%"></span></span>{% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="vacio-panel"><p>Cuando anotes algunos días vas a ver acá tu promedio de la semana.</p></div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel-edicion" id="panel-comida" data-panel-edicion aria-labelledby="panel-comida-titulo">
+    <div class="panel-cabecera">
+      <div>
+        <span class="panel-modo" data-panel-modo>Anotar</span>
+        <h2 id="panel-comida-titulo" data-panel-titulo>¿Qué comiste?</h2>
+      </div>
+      <button type="button" class="btn-icono" data-panel-cerrar data-solo-edicion aria-label="Cerrar y anotar otra cosa" hidden>×</button>
+    </div>
+    <form method="post" action="{{ url_for('alimentacion.crear_entrada') }}" class="panel-form" id="form-comida">
+      <input type="hidden" name="volver" value="{{ volver }}">
+      <div class="segmentado" role="radiogroup" aria-label="Cómo lo cargás">
+        <label><input type="radio" name="modo" value="alimento" checked><span>Alimento</span></label>
+        <label><input type="radio" name="modo" value="manual"><span>Macros a mano</span></label>
+        <label data-solo-nuevo><input type="radio" name="modo" value="frecuente"><span>Frecuente</span></label>
+      </div>
+      <div class="campos-dobles">
+        <div class="campo">
+          <label for="comida-comida">Comida</label>
+          <select id="comida-comida" name="comida">
+            {% for clave, nombre in comidas.items() %}<option value="{{ clave }}" {{ 'selected' if clave == comida_sugerida }}>{{ nombre }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="comida-fecha">Día</label>
+          <input id="comida-fecha" type="date" name="fecha" value="{{ fecha.isoformat() }}" max="{{ hoy.isoformat() }}" required>
+        </div>
+      </div>
+
+      <div class="campo" data-solo-modo="alimento">
+        <label for="comida-alimento">Alimento</label>
+        <select id="comida-alimento" name="alimento_id">
+          <option value="">Elegí…</option>
+          {% for a in alimentos %}
+            <option value="{{ a.id }}" data-kcal="{{ a.por_100g.kcal }}" data-proteinas="{{ a.por_100g.proteinas }}"
+                    data-carbohidratos="{{ a.por_100g.carbohidratos }}" data-grasas="{{ a.por_100g.grasas }}"
+                    data-gramos-unidad="{{ a.gramos_unidad or '' }}" data-unidad="{{ a.unidad }}">{{ a.nombre }}</option>
+          {% endfor %}
+        </select>
+        <span class="campo-ayuda">¿No está? Agregalo en <a href="{{ url_for('alimentacion.alimentos') }}">Alimentos</a>.</span>
+      </div>
+      <div class="campo" data-solo-modo="alimento">
+        <label for="comida-cantidad">Cantidad</label>
+        <div class="campo-monto-panel">
+          <input id="comida-cantidad" type="number" name="cantidad" step="any" min="0" inputmode="decimal" placeholder="Ej. 150">
+          <div class="segmentado" role="radiogroup" aria-label="Unidad">
+            <label><input type="radio" name="unidad" value="g" checked><span>g</span></label>
+            <label data-por-unidad hidden><input type="radio" name="unidad" value="u"><span data-nombre-unidad>unidad</span></label>
+          </div>
+        </div>
+        <span class="campo-ayuda" data-vista-previa></span>
+      </div>
+
+      <div data-solo-modo="manual" class="panel-form" hidden>
+        <div class="campo">
+          <label for="comida-nombre">Qué comiste</label>
+          <input id="comida-nombre" type="text" name="nombre" maxlength="60" placeholder="Ej. Pizza afuera">
+        </div>
+        <div class="campos-dobles">
+          <div class="campo">
+            <label for="comida-kcal">Calorías</label>
+            <input id="comida-kcal" type="number" name="kcal" step="any" min="0" inputmode="decimal" placeholder="Se calculan si las dejás vacías">
+          </div>
+          <div class="campo">
+            <label for="comida-p">Proteínas (g)</label>
+            <input id="comida-p" type="number" name="proteinas" step="any" min="0" inputmode="decimal">
+          </div>
+        </div>
+        <div class="campos-dobles">
+          <div class="campo">
+            <label for="comida-c">Carbohidratos (g)</label>
+            <input id="comida-c" type="number" name="carbohidratos" step="any" min="0" inputmode="decimal">
+          </div>
+          <div class="campo">
+            <label for="comida-g">Grasas (g)</label>
+            <input id="comida-g" type="number" name="grasas" step="any" min="0" inputmode="decimal">
+          </div>
+        </div>
+      </div>
+
+      <div class="campo" data-solo-modo="frecuente" hidden>
+        <label for="comida-frecuente">Comida frecuente</label>
+        {% if frecuentes %}
+          <select id="comida-frecuente" name="frecuente_id">
+            {% for f in frecuentes %}<option value="{{ f.id }}" data-comida="{{ f.comida }}">{{ f.nombre }} · {{ num(f.macros.kcal) }} kcal</option>{% endfor %}
+          </select>
+          <span class="campo-ayuda">Anota todo lo que tiene, en la comida y el día de arriba.</span>
+        {% else %}
+          <span class="campo-ayuda">Todavía no guardaste ninguna. Anotá una comida y tocá "☆ Guardar" al lado de su nombre.</span>
+        {% endif %}
+      </div>
+
+      <div class="panel-acciones">
+        <button type="submit" class="btn-primary" data-guardar>Anotar</button>
+        <button type="button" class="btn-secondary" data-panel-cerrar data-solo-edicion hidden>Cancelar</button>
+        <button type="submit" class="btn-texto-peligro" formnovalidate data-solo-edicion data-url="url_eliminar" data-confirmar="¿Borrar esto del día?" hidden>Eliminar</button>
+      </div>
+    </form>
+  </aside>
+</div>
+
+<script>
+  // Muestra los campos del modo elegido, la unidad del alimento (si tiene) y
+  // una vista previa de las macros. "Frecuente" solo sirve para anotar.
+  (function () {
+    const form = document.getElementById('form-comida');
+    const alimento = form.querySelector('[name="alimento_id"]');
+    const cantidad = form.querySelector('[name="cantidad"]');
+    const porUnidad = form.querySelector('[data-por-unidad]');
+    const vista = form.querySelector('[data-vista-previa]');
+    const frecuente = form.querySelector('[name="frecuente_id"]');
+    const num = (v) => v.toLocaleString('es-AR', { maximumFractionDigits: 0 });
+
+    const previa = () => {
+      const op = alimento.selectedOptions[0];
+      const valor = parseFloat(cantidad.value);
+      if (!op || !op.value || !(valor > 0)) { vista.textContent = ''; return; }
+      const unidad = form.querySelector('[name="unidad"]:checked').value;
+      const gramos = unidad === 'u' && op.dataset.gramosUnidad ? valor * parseFloat(op.dataset.gramosUnidad) : valor;
+      const f = (k) => num(parseFloat(op.dataset[k]) * gramos / 100);
+      vista.textContent = `${unidad === 'u' ? num(gramos) + ' g → ' : ''}${f('kcal')} kcal · P ${f('proteinas')} · C ${f('carbohidratos')} · G ${f('grasas')} g`;
+    };
+
+    const actualizar = () => {
+      const editando = !form.querySelector('[data-solo-edicion]').hidden;
+      form.querySelector('[data-solo-nuevo]').hidden = editando;
+      let modo = form.querySelector('input[name="modo"]:checked');
+      if (editando && modo.value === 'frecuente') { form.querySelector('input[name="modo"][value="alimento"]').checked = true; }
+      modo = form.querySelector('input[name="modo"]:checked').value;
+      form.querySelectorAll('[data-solo-modo]').forEach((el) => { el.hidden = el.dataset.soloModo !== modo; });
+
+      const op = alimento.selectedOptions[0];
+      const tieneUnidad = !!(op && op.dataset.unidad);
+      porUnidad.hidden = !tieneUnidad;
+      if (tieneUnidad) porUnidad.querySelector('[data-nombre-unidad]').textContent = op.dataset.unidad;
+      else form.querySelector('[name="unidad"][value="g"]').checked = true;
+      previa();
+    };
+
+    // Al elegir una frecuente, propone su comida habitual.
+    if (frecuente) frecuente.addEventListener('change', () => {
+      const op = frecuente.selectedOptions[0];
+      if (op && op.dataset.comida) form.querySelector('[name="comida"]').value = op.dataset.comida;
+    });
+    form.addEventListener('change', actualizar);
+    cantidad.addEventListener('input', previa);
+    form.addEventListener('panel:actualizado', actualizar);
+    actualizar();
+  })();
+</script>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+  (function () {
+    const g = {{ graficos | tojson }};
+    const css = getComputedStyle(document.documentElement);
+    const token = (n) => css.getPropertyValue(n).trim();
+    const serie = token('--series-1');
+    const tinta = token('--text-secondary');
+    const referencia = token('--text-muted');
+    const grilla = token('--gridline');
+    const num = (v) => v.toLocaleString('es-AR', { maximumFractionDigits: 0 });
+    const barras = (id, datos, meta, unidad, etiqueta) => {
+      const series = [{ label: etiqueta, data: datos, backgroundColor: serie, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 28, order: 1 }];
+      if (meta) series.push({ type: 'line', label: `Objetivo (${num(meta)} ${unidad})`, data: Array(datos.length).fill(meta), borderColor: referencia, borderWidth: 1, pointRadius: 0, pointHitRadius: 0, order: 0 });
+      new Chart(document.getElementById(id), {
+        type: 'bar',
+        data: { labels: g.dias, datasets: series },
+        options: {
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: tinta, maxTicksLimit: 14 }, grid: { display: false } },
+            y: { beginAtZero: true, ticks: { color: tinta, callback: (v) => num(v) + ' ' + unidad }, grid: { color: grilla }, border: { display: false } },
+          },
+          plugins: {
+            legend: { display: !!meta, labels: { color: tinta, boxWidth: 12, boxHeight: 2 } },
+            tooltip: { callbacks: { label: (c) => c.datasetIndex ? c.dataset.label : `${num(c.parsed.y)} ${unidad}` } },
+          },
+        },
+      });
+    };
+    barras('kcalChart', g.kcal, g.meta_kcal, 'kcal', 'Calorías');
+    barras('proteinasChart', g.proteinas, g.meta_proteinas, 'g', 'Proteínas');
+  })();
+</script>
+{% endblock %}

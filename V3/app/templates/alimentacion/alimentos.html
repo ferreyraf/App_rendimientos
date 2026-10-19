@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Alimentos</h1>
+    <p class="subtitle">Tu lista, con las macros cada 100 g (como en la etiqueta). Si le ponés una unidad (ej. huevo de 50 g), la podés anotar por unidad. Tocá un alimento para editarlo.</p>
+  </div>
+  <form method="post" action="{{ url_for('alimentacion.cargar_basicos') }}">
+    <button type="submit" class="btn-secondary" title="Suma los básicos que no tengas (no toca los que ya están)">Cargar alimentos básicos</button>
+  </form>
+</header>
+
+<div class="config-split llenar">
+  <section class="config-lista carrusel" data-carrusel="alimentos" aria-label="Alimentos y comidas frecuentes">
+    <div class="carrusel-cuerpo">
+      <div class="carrusel-slide" data-titulo="Alimentos ({{ alimentos|length }})">
+        {% for a in alimentos %}
+          <button type="button" class="fila-config" data-editar='{{ edicion[a.id] }}' data-panel="panel-alimento">
+            <span class="fila-config-principal">
+              <strong>{{ a.nombre }}</strong>
+              <span class="fila-config-detalle">{{ resumen_macros(a.por_100g) }} g{% if a.unidad %} · 1 {{ a.unidad }} = {{ num(a.gramos_unidad, 1) }} g{% endif %}</span>
+            </span>
+            <span class="fila-config-monto">{{ num(a.por_100g.kcal) }} kcal</span>
+          </button>
+        {% else %}
+          <p class="vacio lista-vacia">No tenés alimentos. Agregá uno con el panel o cargá los básicos.</p>
+        {% endfor %}
+      </div>
+      <div class="carrusel-slide" data-titulo="Comidas frecuentes" id="frecuentes">
+        <p class="slide-meta">Se crean desde el diario con "☆ Guardar" al lado de una comida, y se anotan enteras eligiendo "Frecuente".</p>
+        {% for f in frecuentes %}
+          <div class="fila-config">
+            <span class="fila-config-principal">
+              <strong>{{ f.nombre }} <span class="muted">· {{ comidas.get(f.comida, '') }}</span></strong>
+              <span class="fila-config-detalle">{{ f['items']|map(attribute='nombre')|join(', ') }} · {{ resumen_macros(f.macros) }} g</span>
+            </span>
+            <span class="fila-config-monto">{{ num(f.macros.kcal) }} kcal</span>
+            <form method="post" action="{{ url_for('alimentacion.eliminar_frecuente', frecuente_id=f.id) }}">
+              <button type="submit" class="btn-icono" data-confirmar="¿Eliminar &quot;{{ f.nombre }}&quot;? Lo que ya anotaste queda igual." aria-label="Eliminar {{ f.nombre }}">×</button>
+            </form>
+          </div>
+        {% else %}
+          <p class="vacio lista-vacia">Todavía no guardaste ninguna.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel-edicion" id="panel-alimento" data-panel-edicion aria-labelledby="panel-alimento-titulo">
+    <div class="panel-cabecera">
+      <div>
+        <span class="panel-modo" data-panel-modo>Nuevo alimento</span>
+        <h2 id="panel-alimento-titulo" data-panel-titulo>Agregar alimento</h2>
+      </div>
+      <button type="button" class="btn-icono" data-panel-cerrar data-solo-edicion aria-label="Cerrar y agregar otro" hidden>×</button>
+    </div>
+    <form method="post" action="{{ url_for('alimentacion.crear_alimento') }}" class="panel-form">
+      <div class="campo">
+        <label for="alimento-nombre">Nombre</label>
+        <input id="alimento-nombre" type="text" name="nombre" maxlength="60" required placeholder="Ej. Arroz blanco (crudo)">
+      </div>
+      <fieldset class="panel-grupo">
+        <legend>Cada 100 g</legend>
+        <div class="campos-dobles">
+          <div class="campo">
+            <label for="alimento-kcal">Calorías</label>
+            <input id="alimento-kcal" type="number" name="kcal" step="any" min="0" max="900" inputmode="decimal" placeholder="Se calculan si las dejás vacías">
+          </div>
+          <div class="campo">
+            <label for="alimento-p">Proteínas (g)</label>
+            <input id="alimento-p" type="number" name="proteinas" step="any" min="0" max="100" inputmode="decimal" required>
+          </div>
+        </div>
+        <div class="campos-dobles">
+          <div class="campo">
+            <label for="alimento-c">Carbohidratos (g)</label>
+            <input id="alimento-c" type="number" name="carbohidratos" step="any" min="0" max="100" inputmode="decimal" required>
+          </div>
+          <div class="campo">
+            <label for="alimento-g">Grasas (g)</label>
+            <input id="alimento-g" type="number" name="grasas" step="any" min="0" max="100" inputmode="decimal" required>
+          </div>
+        </div>
+      </fieldset>
+      <fieldset class="panel-grupo">
+        <legend>Por unidad (opcional)</legend>
+        <div class="campos-dobles">
+          <div class="campo">
+            <label for="alimento-unidad">Unidad</label>
+            <input id="alimento-unidad" type="text" name="unidad" maxlength="20" placeholder="Ej. huevo, vaso">
+          </div>
+          <div class="campo">
+            <label for="alimento-gramos">Pesa (g)</label>
+            <input id="alimento-gramos" type="number" name="gramos_unidad" step="any" min="0" inputmode="decimal" placeholder="Ej. 50">
+          </div>
+        </div>
+      </fieldset>
+      <div class="panel-acciones">
+        <button type="submit" class="btn-primary" data-guardar>Agregar</button>
+        <button type="button" class="btn-secondary" data-panel-cerrar data-solo-edicion hidden>Cancelar</button>
+        <button type="submit" class="btn-texto-peligro" formnovalidate data-solo-edicion data-url="url_eliminar" data-confirmar="¿Eliminar este alimento? Lo que ya anotaste con él queda igual." hidden>Eliminar</button>
+      </div>
+    </form>
+  </aside>
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+{# Alimentación en la pantalla Hoy. Usa: avance, metas, comidas, num. #}
+<div class="promedio-macros">
+  {% for m in avance %}
+    <div class="barra-categoria">
+      <div class="barra-categoria-texto">
+        <span>{{ m.nombre }}</span>
+        <strong>{{ num(m.valor) }}{% if m.meta %} / {{ num(m.meta) }}{% endif %} {{ m.unidad }}</strong>
+      </div>
+      {% if m.meta %}<span class="barra-pista"><span class="barra-relleno {{ 'macro-pasado' if m.pct > 110 }}" style="display: block; width: {{ [m.pct, 100]|min }}%"></span></span>{% endif %}
+    </div>
+  {% endfor %}
+</div>
+<p class="muted">
+  {% if comidas %}{{ comidas }} comida{{ 's' if comidas != 1 }} anotada{{ 's' if comidas != 1 }}. {% endif %}
+  <a href="{{ url_for('alimentacion.diario') }}">Anotar comida</a>{% if not metas %} · <a href="{{ url_for('alimentacion.objetivos') }}">poner objetivos</a>{% endif %}
+</p>

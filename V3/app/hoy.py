@@ -1,6 +1,6 @@
 """Pantalla de inicio: el día completo de un vistazo.
 
-Cada sección de la app (Finanzas; más adelante Rutina y Entrenamiento)
+Cada sección de la app (Rutina, Entrenamiento, Alimentación y Finanzas)
 aporta lo suyo con una función registrada en APORTES que devuelve un
 AporteHoy: indicadores para la fila de arriba, paneles de "tu día" (lo que
 hay que hacer hoy) y paneles de "cómo venís" (estado general). La pantalla
@@ -131,8 +131,14 @@ def aporte_entrenamiento(conn, ahora: datetime) -> AporteHoy:
     return aporte_hoy(conn, ahora)
 
 
+def aporte_alimentacion(conn, ahora: datetime) -> AporteHoy:
+    from .alimentacion.rutas import aporte_hoy
+
+    return aporte_hoy(conn, ahora)
+
+
 # Orden en que las secciones aparecen en la pantalla.
-APORTES = [aporte_rutina, aporte_entrenamiento, aporte_finanzas]
+APORTES = [aporte_rutina, aporte_entrenamiento, aporte_alimentacion, aporte_finanzas]
 
 
 @bp.route("/")

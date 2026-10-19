@@ -8,7 +8,7 @@ APP_NAME = "Bitácora"
 APP_ID = "Bitacora"
 __version__ = "3.1.0"
 PUBLISHER = "Fer F"
-DESCRIPTION = "Tu día en un solo lugar: rutina, hábitos, entrenamiento y finanzas (rulo entre billeteras, gastos e ingresos)"
+DESCRIPTION = "Tu día en un solo lugar: rutina, hábitos, entrenamiento, alimentación y finanzas (rulo entre billeteras, gastos e ingresos)"
 # Releases publicadas (para avisar cuando hay una versión nueva).
 REPO_GITHUB = "ferreyraf/App_rendimientos"
 # Las releases de Bitácora llevan tags "bitacora-v3.0.0". Así la V2 instalada

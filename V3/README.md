@@ -5,6 +5,7 @@ Tu día en un solo lugar:
 - **Hoy**: la pantalla de inicio, con todo lo del día.
 - **Rutina**: agenda por horarios, alarmas, hábitos con checklist, tareas, y registro de sueño, ánimo y peso.
 - **Entrenamiento**: gimnasio (rutinas, series y récords) y cardio.
+- **Alimentación**: diario de comidas con calorías y macros (por alimento y cantidad, a mano o con comidas frecuentes), tu lista de alimentos y objetivos diarios calculados o a mano.
 - **Finanzas**: el rulo entre billeteras virtuales, gastos, ingresos, ajustes por inflación y dólares (lo que era la V2).
 
 La versión actual está en `app/version.py` y se ve en el menú y en **Acerca de**.
@@ -121,7 +122,7 @@ El workflow también se puede correr a mano desde la pestaña **Actions**; así 
 
 - `app/` — Flask + SQLite.
   - `hoy.py`: la pantalla Hoy, que junta lo que aporta cada sección.
-  - `rutina/` y `entrenamiento/`: cada sección con su `logica.py`, `datos.py` y `rutas.py`.
+  - `rutina/`, `entrenamiento/` y `alimentacion/`: cada sección con su `logica.py`, `datos.py` y `rutas.py`.
   - Finanzas: `domain.py`, `db.py` y `routes.py`.
   - `sonidos.py`: los tonos de las alarmas, generados en Python, y el timbre nativo.
   - `recordatorios.py`: los avisos del sistema y el vigía de alarmas, que corren en la app de escritorio.
