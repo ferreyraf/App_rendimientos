@@ -6,7 +6,7 @@ APP_NAME = "Bitácora"
 # entrada de menú. Distinto del de la V2 ("RuloFinanciero") para que las dos
 # instaladas no compartan datos.
 APP_ID = "Bitacora"
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 PUBLISHER = "Fer F"
 DESCRIPTION = "Tu día en un solo lugar: rutina, hábitos, entrenamiento, alimentación y finanzas (rulo entre billeteras, gastos e ingresos)"
 # Releases publicadas (para avisar cuando hay una versión nueva).
