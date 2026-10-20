@@ -9,41 +9,232 @@
   </div>
 </section>
 
-<div class="two-col">
-  <section class="chart-card">
-    <h2>Tus datos</h2>
-    <p class="subtitle">Todo se guarda en esta computadora. Desinstalar o actualizar la app no borra esta carpeta.</p>
-    <table class="tabla-acerca">
-      <tbody>
-        <tr><th>Carpeta de datos</th><td><code>{{ carpeta_datos }}</code></td></tr>
-        <tr><th>Base de datos</th><td><code>{{ base.name }}</code> · {{ tamano_db_kb|ar(0) }} KB</td></tr>
-        <tr><th>Backups automáticos</th><td><code>{{ carpeta_backups }}</code></td></tr>
-        <tr><th>Registro (logs)</th><td><code>{{ carpeta_logs }}</code></td></tr>
-      </tbody>
-    </table>
-  </section>
+<section class="carrusel llenar" data-carrusel="acerca" id="carrusel-acerca" aria-label="Acerca de {{ nombre }}">
+  <div class="carrusel-cuerpo">
+    <div class="carrusel-slide" data-titulo="Novedades">
+      <p class="slide-meta">Qué trajo cada versión, de la más nueva a la más vieja.</p>
+      {% for n in novedades %}
+        <article class="novedad {{ 'novedad-actual' if n.version == version }}">
+          <h3>
+            {{ n.version }} · {{ n.titulo }}
+            {% if n.version == version %}<span class="badge badge-actual">Tu versión</span>{% endif %}
+            <span class="novedad-fecha">{{ n.fecha[8:10] }}/{{ n.fecha[5:7] }}/{{ n.fecha[:4] }}</span>
+          </h3>
+          <ul class="acerca-lista novedad-cambios">
+            {% for c in n.cambios %}<li>{{ c }}</li>{% endfor %}
+          </ul>
+        </article>
+      {% endfor %}
+    </div>
 
-  <section class="chart-card">
-    <h2>Información</h2>
-    <table class="tabla-acerca">
-      <tbody>
-        <tr><th>Versión</th><td>{{ version }}</td></tr>
-        <tr><th>Autor</th><td>{{ autor }}</td></tr>
-        <tr><th>Sistema</th><td>{{ sistema }}</td></tr>
-        <tr><th>Python</th><td>{{ python }}</td></tr>
-        <tr>
-          <th>Dólar</th>
-          <td>
-            {% if cotizacion_usd %}{{ cotizacion_usd.valor|pesos }} · consultado {{ cotizacion_usd.actualizado.strftime("%d/%m/%Y %H:%M") }}{% else %}Sin consultar todavía{% endif %}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <h3 class="acerca-fuentes">Fuentes de datos</h3>
-    <ul class="acerca-lista">
-      <li>Inflación (IPC): INDEC, vía argentinadatos.com.ar</li>
-      <li>Dólar: Dólar Blue en Córdoba, infodolar.com (venta)</li>
-    </ul>
-  </section>
-</div>
+    <div class="carrusel-slide" data-titulo="Actualizar" id="actualizar">
+      <div class="actualizar" id="actualizar-panel" data-versiones="{{ url_for('actualizacion.versiones') }}"
+           data-instalar="{{ url_for('actualizacion.instalar') }}" data-estado="{{ url_for('actualizacion.estado') }}">
+        <p class="actualizar-resumen" data-resumen>Buscando versiones…</p>
+        <p class="campo-ayuda" data-motivo hidden></p>
+        <label class="check actualizar-respaldo">
+          <input type="checkbox" data-respaldar checked>
+          Hacer un respaldo de mis datos antes de instalar (recomendado: si algo sale mal, lo recuperás en "Recuperar datos")
+        </label>
+        <div class="actualizar-progreso" data-progreso hidden>
+          <p data-progreso-texto></p>
+          <span class="barra-pista"><span class="barra-relleno" data-progreso-barra style="display: block; width: 0%"></span></span>
+        </div>
+        <div class="actualizar-lista" data-lista></div>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Recuperar datos" id="recuperar">
+      <p class="slide-meta">Copias de tu base: las automáticas (al abrir la app, quedan las últimas 10) y las de antes de cada actualización o restauración. Restaurar una reemplaza tus datos actuales, que quedan guardados como otro respaldo. Para bajar o subir un respaldo como archivo, andá a <a href="{{ url_for('main.configuracion', _anchor='respaldo') }}">Configuración</a>.</p>
+      <div class="table-scroll">
+        <table class="tabla-acerca tabla-respaldos">
+          <thead><tr><th>Fecha</th><th>De cuándo es</th><th class="num">Tamaño</th><th></th></tr></thead>
+          <tbody>
+            {% for r in respaldos %}
+              <tr>
+                <td class="sin-cortes">{{ r.fecha.strftime("%d/%m/%Y %H:%M") }}</td>
+                <td>{{ r.motivo }}</td>
+                <td class="num sin-cortes">{{ r.tamano_kb|ar(0) }} KB</td>
+                <td class="num">
+                  <form method="post" action="{{ url_for('actualizacion.restaurar') }}">
+                    <input type="hidden" name="id" value="{{ r.id }}">
+                    <button type="submit" class="btn-secondary" data-confirmar="¿Volver a los datos del {{ r.fecha.strftime('%d/%m/%Y a las %H:%M') }}? Lo que tenés ahora queda guardado como respaldo.">Restaurar</button>
+                  </form>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="vacio">Todavía no hay respaldos.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="carrusel-slide" data-titulo="Información">
+      <div class="two-col">
+        <section>
+          <h3>Tus datos</h3>
+          <p class="subtitle">Todo se guarda en esta computadora. Desinstalar o actualizar la app no borra esta carpeta.</p>
+          <table class="tabla-acerca">
+            <tbody>
+              <tr><th>Carpeta de datos</th><td><code>{{ carpeta_datos }}</code></td></tr>
+              <tr><th>Base de datos</th><td><code>{{ base.name }}</code> · {{ tamano_db_kb|ar(0) }} KB</td></tr>
+              <tr><th>Backups automáticos</th><td><code>{{ carpeta_backups }}</code></td></tr>
+              <tr><th>Registro (logs)</th><td><code>{{ carpeta_logs }}</code></td></tr>
+            </tbody>
+          </table>
+        </section>
+        <section>
+          <h3>Información</h3>
+          <table class="tabla-acerca">
+            <tbody>
+              <tr><th>Versión</th><td>{{ version }}</td></tr>
+              <tr><th>Autor</th><td>{{ autor }}</td></tr>
+              <tr><th>Sistema</th><td>{{ sistema }}</td></tr>
+              <tr><th>Python</th><td>{{ python }}</td></tr>
+              <tr>
+                <th>Dólar</th>
+                <td>
+                  {% if cotizacion_usd %}{{ cotizacion_usd.valor|pesos }} · consultado {{ cotizacion_usd.actualizado.strftime("%d/%m/%Y %H:%M") }}{% else %}Sin consultar todavía{% endif %}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 class="acerca-fuentes">Fuentes de datos</h3>
+          <ul class="acerca-lista">
+            <li>Inflación (IPC): INDEC, vía argentinadatos.com.ar</li>
+            <li>Dólar: Dólar Blue en Córdoba, infodolar.com (venta)</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  // Actualizar: lista las versiones publicadas (las nuevas con lo que traen),
+  // instala la elegida y muestra el avance hasta que la app se reinicia.
+  (function () {
+    const panel = document.getElementById('actualizar-panel');
+    const resumen = panel.querySelector('[data-resumen]');
+    const motivo = panel.querySelector('[data-motivo]');
+    const respaldar = panel.querySelector('[data-respaldar]');
+    const lista = panel.querySelector('[data-lista]');
+    const progreso = panel.querySelector('[data-progreso]');
+    const progresoTexto = panel.querySelector('[data-progreso-texto]');
+    const progresoBarra = panel.querySelector('[data-progreso-barra]');
+    const fecha = (iso) => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '';
+    const el = (etiqueta, clase, texto) => {
+      const nodo = document.createElement(etiqueta);
+      if (clase) nodo.className = clase;
+      if (texto !== undefined) nodo.textContent = texto;
+      return nodo;
+    };
+    let datos = null;
+
+    // Si llegaste desde el aviso "Nueva versión" del menú, abre esta pestaña
+    // (el carrusel se arma después y arranca en la última que se vio).
+    if (location.hash === '#actualizar') {
+      try { sessionStorage.setItem('carrusel:acerca', 'Actualizar'); } catch (e) {}
+    }
+
+    function boton(texto, version, origen, clase) {
+      const b = el('button', clase || 'btn-secondary', texto);
+      b.type = 'button';
+      b.disabled = !!datos.motivo;
+      b.addEventListener('click', () => instalar(version, origen));
+      return b;
+    }
+
+    function fila(v) {
+      const art = el('article', 'novedad' + (v.es_nueva ? ' novedad-nueva' : '') + (v.es_actual ? ' novedad-actual' : ''));
+      const cabeza = el('div', 'novedad-cabecera');
+      const h = el('h3', '', v.version + (v.titulo ? ' · ' + v.titulo : ''));
+      if (v.es_nueva) h.append(el('span', 'badge badge-real', 'Nueva'));
+      if (v.es_actual) h.append(el('span', 'badge badge-actual', 'Tu versión'));
+      h.append(el('span', 'novedad-fecha', fecha(v.fecha)));
+      cabeza.append(h);
+      if (v.instalable) {
+        const texto = (v.es_nueva ? 'Actualizar a la ' : 'Volver a la ') + v.version + (v.tamano_mb ? ` (${v.tamano_mb} MB)` : '');
+        cabeza.append(boton(texto, v.version, 'github', v.es_nueva ? 'btn-primary' : 'btn-secondary'));
+      }
+      art.append(cabeza);
+      if (v.cambios.length) {
+        const ul = el('ul', 'acerca-lista novedad-cambios');
+        v.cambios.forEach((c) => ul.append(el('li', '', c)));
+        if (v.es_nueva) art.append(ul);
+        else {
+          const det = el('details');
+          det.append(el('summary', 'novedad-ver', 'Qué trae'), ul);
+          art.append(det);
+        }
+      }
+      return art;
+    }
+
+    function pintar() {
+      lista.textContent = '';
+      motivo.hidden = !datos.motivo;
+      motivo.textContent = datos.motivo || '';
+      respaldar.closest('label').hidden = !!datos.motivo;
+      const nuevas = datos.versiones.filter((v) => v.es_nueva);
+      if (datos.error) resumen.textContent = `Tenés la ${datos.actual}. ${datos.error}`;
+      else if (nuevas.length) resumen.textContent = `Tenés la ${datos.actual}. Hay ${nuevas.length === 1 ? 'una versión nueva' : nuevas.length + ' versiones nuevas'}: la ${nuevas[0].version}.`;
+      else resumen.textContent = `Tenés la ${datos.actual}: estás al día.`;
+
+      if (datos.guardada) {
+        const art = el('article', 'novedad');
+        const cabeza = el('div', 'novedad-cabecera');
+        cabeza.append(el('h3', '', `${datos.guardada} · guardada en esta PC`));
+        cabeza.append(boton(`Volver a la ${datos.guardada}`, datos.guardada, 'local'));
+        art.append(cabeza, el('p', 'campo-ayuda', 'Es la versión que tenías antes de la última actualización: se instala sin internet.'));
+        lista.append(art);
+      }
+      datos.versiones.forEach((v) => lista.append(fila(v)));
+    }
+
+    function mostrarEstado(e) {
+      const textos = {
+        respaldando: 'Respaldando tus datos…',
+        descargando: `Descargando la ${e.version}…` + (e.progreso != null ? ` ${e.progreso} %` : ''),
+        instalando: `Preparando la ${e.version}…`,
+        reiniciando: `Listo: la app se cierra y en unos segundos se abre la ${e.version}.`,
+        error: e.mensaje,
+      };
+      progreso.hidden = e.fase === 'inactivo';
+      progresoTexto.textContent = textos[e.fase] || '';
+      progresoTexto.className = e.fase === 'error' ? 'negativo' : '';
+      progresoBarra.style.width = (e.fase === 'descargando' ? e.progreso || 0 : ['instalando', 'reiniciando'].includes(e.fase) ? 100 : 0) + '%';
+      const ocupado = ['respaldando', 'descargando', 'instalando', 'reiniciando'].includes(e.fase);
+      lista.querySelectorAll('button').forEach((b) => { b.disabled = ocupado || !!datos.motivo; });
+      if (ocupado && e.fase !== 'reiniciando') setTimeout(seguir, 700);
+      if (e.fase === 'error' && datos) pintar();
+    }
+
+    function seguir() {
+      fetch(panel.dataset.estado).then((r) => r.json()).then(mostrarEstado).catch(() => setTimeout(seguir, 1500));
+    }
+
+    function instalar(version, origen) {
+      const nueva = datos.versiones.some((v) => v.version === version && v.es_nueva);
+      const aviso = nueva
+        ? `¿Instalar la ${version}? La app se va a cerrar y volver a abrir sola.`
+        : `¿Volver a la ${version}? Las cosas que cargaste con funciones que esa versión no tiene no se van a ver (siguen guardadas y vuelven al actualizar). La app se va a cerrar y volver a abrir sola.`;
+      if (!window.confirm(aviso + (respaldar.checked ? '\n\nAntes se hace un respaldo de tus datos.' : '\n\nNo se va a hacer un respaldo antes.'))) return;
+      const cuerpo = new FormData();
+      cuerpo.append('version', version);
+      cuerpo.append('origen', origen);
+      if (respaldar.checked) cuerpo.append('respaldar', '1');
+      fetch(panel.dataset.instalar, { method: 'POST', body: cuerpo })
+        .then((r) => r.json())
+        .then((r) => r.error ? mostrarEstado({ fase: 'error', mensaje: r.error }) : seguir())
+        .catch(() => mostrarEstado({ fase: 'error', mensaje: 'No se pudo empezar la instalación.' }));
+    }
+
+    fetch(panel.dataset.versiones)
+      .then((r) => r.json())
+      .then((r) => { datos = r; pintar(); seguir(); })
+      .catch(() => { resumen.textContent = 'No se pudieron consultar las versiones.'; });
+  })();
+</script>
 {% endblock %}

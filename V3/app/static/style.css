@@ -4554,3 +4554,102 @@ a.fila-config {
     text-overflow: ellipsis;
   }
 }
+
+/* --- Acerca de: novedades, actualizar y recuperar --- */
+
+.novedad {
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--gridline);
+}
+
+.novedad:first-of-type {
+  border-top: none;
+}
+
+.novedad h3 {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+.novedad .badge {
+  margin-left: 0;
+}
+
+.novedad-fecha {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.novedad-actual h3,
+.novedad-nueva h3 {
+  color: var(--accent);
+}
+
+.novedad-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.novedad-cambios li + li {
+  margin-top: 3px;
+}
+
+.novedad-ver {
+  margin-top: 4px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.actualizar-resumen {
+  margin: 4px 0 8px;
+  font-weight: 600;
+}
+
+.actualizar-respaldo {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.actualizar-respaldo[hidden] {
+  display: none;
+}
+
+.actualizar-respaldo input {
+  margin-top: 3px;
+}
+
+.actualizar-progreso {
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.actualizar-progreso[hidden] {
+  display: none;
+}
+
+.actualizar-progreso p {
+  margin: 0 0 8px;
+}
+
+.tabla-respaldos th {
+  width: auto;
+}
+
+.tabla-respaldos form {
+  display: inline;
+}

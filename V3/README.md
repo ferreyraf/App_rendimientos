@@ -44,6 +44,14 @@ Queda en el menú de aplicaciones y como comando `bitacora`. No necesita `sudo`.
 
 Ahí están la base (`rendimientos.db`), los backups automáticos y los logs. Actualizar o desinstalar la app no los borra. Se puede forzar otra carpeta con la variable `RULO_DATA_DIR`.
 
+## Actualizar, volver atrás y recuperar datos
+
+Todo está en **Acerca de**:
+
+- **Novedades**: qué trajo cada versión (sale de `app/novedades.py`, que también es el texto de la Release).
+- **Actualizar**: las versiones publicadas en GitHub. La app instalada descarga la que elijas (más nueva o anterior), opcionalmente respalda tus datos antes, se cierra, la instala y se vuelve a abrir. En Linux guarda además el AppImage que reemplaza, para volver a esa versión sin internet. En desarrollo solo se ven las versiones (se actualiza con git).
+- **Recuperar datos**: los backups automáticos y los de antes de cada actualización (en `backups/actualizaciones/`, quedan los últimos 5); restaurar uno guarda antes lo que había.
+
 ## Alarmas
 
 Se crean en **Rutina → Alarmas**. Cada alarma tiene:
@@ -112,7 +120,7 @@ Genera en `dist/release/` el instalador del sistema donde se corre:
 
 ### Publicar una versión
 
-1. Subí el número en `app/version.py` (ej. `3.1.0`).
+1. Subí el número en `app/version.py` (ej. `3.1.0`) y sumá la versión arriba de todo en `app/novedades.py` (si falta, la Release no se publica).
 2. Hacé el commit y creá el tag con el prefijo `bitacora-v`: `git tag bitacora-v3.1.0 && git push origin bitacora-v3.1.0`. El prefijo hace que la V2 instalada no tome la release como suya.
 3. GitHub Actions (`.github/workflows/build-v3.yml`, en la raíz del repo) compila Windows y Linux y publica una Release con los dos instaladores.
 

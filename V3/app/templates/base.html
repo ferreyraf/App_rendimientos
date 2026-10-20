@@ -112,7 +112,7 @@
       <div class="sidebar-spacer"></div>
       {{ enlace("main.configuracion", "Configuración", "configuracion") }}
       {{ enlace("main.acerca", "Acerca de", "acerca") }}
-      <a class="aviso-version" id="aviso-version" href="#" target="_blank" rel="noopener" hidden>
+      <a class="aviso-version" id="aviso-version" href="{{ url_for('main.acerca', _anchor='actualizar') }}" hidden>
         <span class="aviso-version-punto" aria-hidden="true"></span>
         <span>Nueva versión <strong data-version-nueva></strong> disponible</span>
       </a>

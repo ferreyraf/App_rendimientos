@@ -93,13 +93,20 @@ jobs:
       run:
         working-directory: .
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: instaladores
           merge-multiple: true
 
+      # El texto de la Release son las novedades de la versión (la app lo
+      # muestra al ofrecer actualizar).
+      - name: Notas de la versión
+        run: python3 V3/packaging/notas_release.py "${{ github.ref_name }}" > notas.md
+
       - uses: softprops/action-gh-release@v2
         with:
           name: Bitácora ${{ github.ref_name }}
           files: instaladores/*
-          generate_release_notes: true
+          body_path: notas.md

@@ -339,6 +339,8 @@ def main():
     # y al detener o posponer se corta enseguida.
     app.config["SONIDO_NATIVO"] = True
     app.config["AL_ATENDER_ALARMA"] = vigia.revisar_ya
+    # Al instalar otra versión desde Acerca de, la app se cierra sola.
+    app.config["SALIR_APP"] = salir
 
     # El vigía arranca con la interfaz ya andando: si una alarma está sonando
     # al abrir, tiene que poder mostrar la ventana.

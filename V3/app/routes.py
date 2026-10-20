@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, send_file, url_for
 
 from . import cotizacion, db, formato_ar, formato_pesos, preferencias, respaldo
+from .novedades import NOVEDADES
 from .version import APP_ID, APP_NAME, DESCRIPTION, PREFIJO_TAG, PUBLISHER, REPO_GITHUB, __version__
 from .domain import (
     MovimientoRecurrente,
@@ -807,6 +808,8 @@ def actualizar_cotizacion():
 
 @bp.route("/acerca")
 def acerca():
+    from .actualizacion import listar_respaldos
+
     conn = db.get_db()
     tamano_db = db.DB_PATH.stat().st_size if db.DB_PATH.exists() else 0
     return render_template(
@@ -824,6 +827,8 @@ def acerca():
         python=platform.python_version(),
         sistema=f"{platform.system()} {platform.release()}",
         cotizacion_usd=db.get_cotizacion(conn, "USD"),
+        novedades=NOVEDADES,
+        respaldos=listar_respaldos(),
     )
 
 
@@ -863,7 +868,9 @@ def api_version():
             ]
             mejor = max(candidatas, key=lambda r: _como_tupla(r["tag_name"]), default=None)
             if mejor and _como_tupla(mejor["tag_name"]) > _como_tupla(__version__):
-                nueva = {"version": mejor["tag_name"].removeprefix(PREFIJO_TAG), "url": mejor["html_url"]}
+                # El aviso del menú lleva a Acerca de, donde se instala.
+                nueva = {"version": mejor["tag_name"].removeprefix(PREFIJO_TAG),
+                         "url": url_for("main.acerca", _anchor="actualizar")}
         except (OSError, ValueError, KeyError, TypeError):
             logger.info("No se pudo consultar la última versión", exc_info=True)
             return jsonify({"actual": __version__, "nueva": None})

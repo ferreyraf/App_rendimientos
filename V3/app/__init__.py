@@ -5,11 +5,12 @@ from logging.handlers import RotatingFileHandler
 
 from flask import Flask, render_template
 
-from . import db
+from . import certificados, db
 from .version import APP_NAME, __version__
 
 
 def create_app():
+    certificados.configurar()
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or _load_or_create_secret_key()
 
@@ -20,6 +21,7 @@ def create_app():
         db.init_db()
 
     from . import acceso
+    from .actualizacion import bp as bp_actualizacion
     from .alimentacion.rutas import bp as bp_alimentacion
     from .hoy import bp as bp_hoy
     from .routes import bp
@@ -31,6 +33,7 @@ def create_app():
     app.register_blueprint(bp_rutina)
     app.register_blueprint(bp_entrenamiento)
     app.register_blueprint(bp_alimentacion)
+    app.register_blueprint(bp_actualizacion)
     acceso.init_app(app)
     _register_error_handlers(app)
     app.add_template_filter(formato_ar, "ar")
